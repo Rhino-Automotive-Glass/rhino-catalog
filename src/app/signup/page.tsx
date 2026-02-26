@@ -11,7 +11,7 @@ export default function SignupPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="flex flex-col items-center gap-6 w-full max-w-sm">
         <h1 className="text-2xl font-bold">Create an account</h1>
-        <SignupForm supabase={supabase} redirectTo={`${window.location.origin}/auth/callback`} />
+        <SignupForm supabase={supabase} />
         <p className="text-sm text-gray-600">
           Already have an account?{' '}
           <Link href="/login" className="text-blue-600 hover:underline">
