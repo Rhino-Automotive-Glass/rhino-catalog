@@ -17,7 +17,6 @@ import {
   ChevronsRight,
   Loader2,
   Search,
-  DatabaseZap,
 } from "lucide-react";
 
 import type { Product, PaginatedResponse } from "@/lib/types";
@@ -98,7 +97,6 @@ export default function ProductsPage() {
   const [data, setData] = useState<Product[]>([]);
   const [rowCount, setRowCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [migrating, setMigrating] = useState(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -152,25 +150,6 @@ export default function ProductsPage() {
     manualPagination: true,
   });
 
-  const handleMigrate = async () => {
-    setMigrating(true);
-    try {
-      const res = await fetch("/api/products/migrate", { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error);
-      toast.success("Migration complete", {
-        description: `${json.inserted} products created from ${json.totalCodes} codes`,
-      });
-      fetchProducts();
-    } catch (err) {
-      toast.error("Migration failed", {
-        description: err instanceof Error ? err.message : "Unknown error",
-      });
-    } finally {
-      setMigrating(false);
-    }
-  };
-
   const pageCount = table.getPageCount();
 
   return (
@@ -182,14 +161,6 @@ export default function ProductsPage() {
             Manage your product catalog
           </p>
         </div>
-        <Button onClick={handleMigrate} disabled={migrating} variant="outline">
-          {migrating ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <DatabaseZap className="mr-2 h-4 w-4" />
-          )}
-          Create missing products
-        </Button>
       </div>
 
       <div className="card p-6 md:p-8">
