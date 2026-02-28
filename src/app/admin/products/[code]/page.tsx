@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Save, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 
 import type { Product } from "@/lib/types";
+import type { RoleName } from "@/lib/roles";
 import { productFormSchema, type ProductFormValues, emptyImages } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,16 @@ import {
 } from "@/components/ui/select";
 import { SingleImageUpload, MultiImageUpload } from "@/components/image-upload";
 
+/** Roles that can edit all product fields */
+function canEditProducts(role: RoleName): boolean {
+  return role === "super_admin" || role === "admin";
+}
+
+/** Roles that can edit images */
+function canEditImages(role: RoleName): boolean {
+  return role === "super_admin" || role === "admin" || role === "editor";
+}
+
 export default function EditProductPage({
   params,
 }: {
@@ -34,6 +45,8 @@ export default function EditProductPage({
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [role, setRole] = useState<RoleName | null>(null);
+  const [roleLoading, setRoleLoading] = useState(true);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
@@ -51,6 +64,15 @@ export default function EditProductPage({
       images: emptyImages,
     },
   });
+
+  // Fetch user role
+  useEffect(() => {
+    fetch("/api/me/role")
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => setRole(data.role as RoleName))
+      .catch(() => setRole(null))
+      .finally(() => setRoleLoading(false));
+  }, []);
 
   const fetchProduct = useCallback(async () => {
     setLoading(true);
@@ -97,12 +119,17 @@ export default function EditProductPage({
   }, [fetchProduct]);
 
   const onSubmit = async (values: ProductFormValues) => {
+    if (!role) return;
+
     setSaving(true);
     try {
+      // Editors only send images
+      const payload = canEditProducts(role) ? values : { images: values.images };
+
       const res = await fetch(`/api/products/${encodeURIComponent(code)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -119,10 +146,23 @@ export default function EditProductPage({
     }
   };
 
-  if (loading) {
+  if (loading || roleLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!role) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <ShieldAlert className="h-12 w-12 mx-auto mb-4 text-destructive" />
+        <p className="text-lg font-medium">Access Denied</p>
+        <p className="mt-1">You do not have permission to view this page.</p>
+        <Link href="/admin/products" className="text-primary underline mt-4 inline-block">
+          Back to list
+        </Link>
       </div>
     );
   }
@@ -138,6 +178,9 @@ export default function EditProductPage({
     );
   }
 
+  const isAdmin = canEditProducts(role);
+  const isEditor = canEditImages(role) && !isAdmin;
+  const isViewOnly = !canEditImages(role);
   const images = form.watch("images");
 
   return (
@@ -158,201 +201,234 @@ export default function EditProductPage({
         </Badge>
       </div>
 
+      {/* Role notice */}
+      {isEditor && (
+        <div className="flex items-center gap-2 mb-6 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+          <ShieldAlert className="h-4 w-4 shrink-0" />
+          <span>You have <strong>editor</strong> access. You can only update product images.</span>
+        </div>
+      )}
+      {isViewOnly && (
+        <div className="flex items-center gap-2 mb-6 rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+          <ShieldAlert className="h-4 w-4 shrink-0" />
+          <span>You have <strong>view-only</strong> access. You cannot make changes to this product.</span>
+        </div>
+      )}
+
       <form onSubmit={form.handleSubmit(onSubmit)}>
         {/* Basic Info */}
-        <div className="card p-6 md:p-8 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Basic Information</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="name" className="mb-1">Name</Label>
-              <Input id="name" {...form.register("name")} />
-              {form.formState.errors.name && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.name.message}
-                </p>
-              )}
-            </div>
+        <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
+          <div className="card p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Basic Information</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name" className="mb-1">Name</Label>
+                <Input id="name" {...form.register("name")} />
+                {form.formState.errors.name && (
+                  <p className="text-sm text-destructive mt-1">
+                    {form.formState.errors.name.message}
+                  </p>
+                )}
+              </div>
 
-            <div>
-              <Label htmlFor="status" className="mb-1">Status</Label>
-              <Select
-                value={form.watch("status")}
-                onValueChange={(v) =>
-                  form.setValue("status", v as ProductFormValues["status"], {
-                    shouldDirty: true,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div>
+                <Label htmlFor="status" className="mb-1">Status</Label>
+                <Select
+                  value={form.watch("status")}
+                  onValueChange={(v) =>
+                    form.setValue("status", v as ProductFormValues["status"], {
+                      shouldDirty: true,
+                    })
+                  }
+                  disabled={!isAdmin}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="published">Published</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="md:col-span-2">
-              <Label htmlFor="description" className="mb-1">Description</Label>
-              <Textarea
-                id="description"
-                rows={3}
-                {...form.register("description")}
-              />
-              {form.formState.errors.description && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.description.message}
-                </p>
-              )}
+              <div className="md:col-span-2">
+                <Label htmlFor="description" className="mb-1">Description</Label>
+                <Textarea
+                  id="description"
+                  rows={3}
+                  {...form.register("description")}
+                />
+                {form.formState.errors.description && (
+                  <p className="text-sm text-destructive mt-1">
+                    {form.formState.errors.description.message}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {/* Pricing & Stock */}
-        <div className="card p-6 md:p-8 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Pricing & Stock</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="price" className="mb-1">Price</Label>
-              <Input
-                id="price"
-                type="number"
-                step="0.01"
-                min="0"
-                {...form.register("price", { valueAsNumber: true })}
-              />
-              {form.formState.errors.price && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.price.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="stock" className="mb-1">Stock</Label>
-              <Input
-                id="stock"
-                type="number"
-                min="0"
-                {...form.register("stock", { valueAsNumber: true })}
-              />
-              {form.formState.errors.stock && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.stock.message}
-                </p>
-              )}
+        <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
+          <div className="card p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Pricing & Stock</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <Label htmlFor="price" className="mb-1">Price</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  {...form.register("price", { valueAsNumber: true })}
+                />
+                {form.formState.errors.price && (
+                  <p className="text-sm text-destructive mt-1">
+                    {form.formState.errors.price.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="stock" className="mb-1">Stock</Label>
+                <Input
+                  id="stock"
+                  type="number"
+                  min="0"
+                  {...form.register("stock", { valueAsNumber: true })}
+                />
+                {form.formState.errors.stock && (
+                  <p className="text-sm text-destructive mt-1">
+                    {form.formState.errors.stock.message}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {/* Product Details */}
-        <div className="card p-6 md:p-8 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Product Details</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="rhino_code" className="mb-1">Rhino Code (read-only)</Label>
-              <Input
-                id="rhino_code"
-                {...form.register("rhino_code")}
-                readOnly
-                className="bg-gray-100 dark:bg-gray-700"
-              />
-            </div>
-            <div>
-              <Label htmlFor="rhino_description" className="mb-1">
-                Rhino Description (read-only)
-              </Label>
-              <Input
-                id="rhino_description"
-                {...form.register("rhino_description")}
-                readOnly
-                className="bg-gray-100 dark:bg-gray-700"
-              />
-            </div>
-            <div>
-              <Label htmlFor="brand" className="mb-1">Brand</Label>
-              <Input id="brand" {...form.register("brand")} />
-            </div>
-            <div>
-              <Label htmlFor="model" className="mb-1">Model</Label>
-              <Input id="model" {...form.register("model")} />
-            </div>
-            <div>
-              <Label htmlFor="subModel" className="mb-1">Sub-Model</Label>
-              <Input id="subModel" {...form.register("subModel")} />
+        <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
+          <div className="card p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Product Details</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="rhino_code" className="mb-1">Rhino Code (read-only)</Label>
+                <Input
+                  id="rhino_code"
+                  {...form.register("rhino_code")}
+                  readOnly
+                  className="bg-gray-100 dark:bg-gray-700"
+                />
+              </div>
+              <div>
+                <Label htmlFor="rhino_description" className="mb-1">
+                  Rhino Description (read-only)
+                </Label>
+                <Input
+                  id="rhino_description"
+                  {...form.register("rhino_description")}
+                  readOnly
+                  className="bg-gray-100 dark:bg-gray-700"
+                />
+              </div>
+              <div>
+                <Label htmlFor="brand" className="mb-1">Brand</Label>
+                <Input id="brand" {...form.register("brand")} />
+              </div>
+              <div>
+                <Label htmlFor="model" className="mb-1">Model</Label>
+                <Input id="model" {...form.register("model")} />
+              </div>
+              <div>
+                <Label htmlFor="subModel" className="mb-1">Sub-Model</Label>
+                <Input id="subModel" {...form.register("subModel")} />
+              </div>
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {/* Images */}
-        <div className="card p-6 md:p-8 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Images</h2>
+        <fieldset disabled={isViewOnly} className={isViewOnly ? "opacity-60" : undefined}>
+          <div className="card p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Images</h2>
 
-          {/* Main images */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-              Main Images
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              {(["left", "right", "back"] as const).map((side) => (
-                <SingleImageUpload
-                  key={side}
-                  label={`Main ${side}`}
-                  value={images.main[side]}
-                  folder={`${code}/main`}
-                  onChange={(url) => {
-                    const updated = { ...images };
-                    updated.main = { ...updated.main, [side]: url };
-                    // Remove the key entirely if undefined
-                    if (!url) delete updated.main[side];
-                    form.setValue("images", updated, { shouldDirty: true });
-                  }}
-                />
-              ))}
+            {/* Main images */}
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Main Images
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                {(["left", "right", "back"] as const).map((side) => (
+                  <SingleImageUpload
+                    key={side}
+                    label={`Main ${side}`}
+                    value={images.main[side]}
+                    folder={`${code}/main`}
+                    onChange={(url) => {
+                      const updated = { ...images };
+                      updated.main = { ...updated.main, [side]: url };
+                      // Remove the key entirely if undefined
+                      if (!url) delete updated.main[side];
+                      form.setValue("images", updated, { shouldDirty: true });
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Detail images */}
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Detail Images
+              </h3>
+              <div className="grid grid-cols-1 gap-6">
+                {(["left", "right", "back"] as const).map((side) => (
+                  <MultiImageUpload
+                    key={side}
+                    label={`Detail ${side}`}
+                    value={images.details[side]}
+                    max={3}
+                    folder={`${code}/details/${side}`}
+                    onChange={(urls) => {
+                      const updated = { ...images };
+                      updated.details = { ...updated.details, [side]: urls };
+                      form.setValue("images", updated, { shouldDirty: true });
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
+        </fieldset>
 
-          {/* Detail images */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-              Detail Images
-            </h3>
-            <div className="grid grid-cols-1 gap-6">
-              {(["left", "right", "back"] as const).map((side) => (
-                <MultiImageUpload
-                  key={side}
-                  label={`Detail ${side}`}
-                  value={images.details[side]}
-                  max={3}
-                  folder={`${code}/details/${side}`}
-                  onChange={(urls) => {
-                    const updated = { ...images };
-                    updated.details = { ...updated.details, [side]: urls };
-                    form.setValue("images", updated, { shouldDirty: true });
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Save */}
-        <div className="flex justify-end gap-3">
-          <Link href="/admin/products">
-            <Button variant="outline" type="button">
-              Cancel
+        {/* Save — hidden for view-only roles */}
+        {!isViewOnly ? (
+          <div className="flex justify-end gap-3">
+            <Link href="/admin/products">
+              <Button variant="outline" type="button">
+                Cancel
+              </Button>
+            </Link>
+            <Button type="submit" disabled={saving || !form.formState.isDirty}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              {isAdmin ? "Save Changes" : "Save Images"}
             </Button>
-          </Link>
-          <Button type="submit" disabled={saving || !form.formState.isDirty}>
-            {saving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save Changes
-          </Button>
-        </div>
+          </div>
+        ) : (
+          <div className="flex justify-end">
+            <Link href="/admin/products">
+              <Button variant="outline" type="button">
+                Back to list
+              </Button>
+            </Link>
+          </div>
+        )}
       </form>
     </div>
   );

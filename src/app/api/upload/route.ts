@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
+import { getUserRole, canEditImages } from "@/lib/roles";
 
 /**
  * POST /api/upload
  *
  * Accepts a file via FormData, uploads it to Vercel Blob, returns the public URL.
+ * Requires at least editor role.
  * Query params:
  *   folder – optional path prefix (e.g. "ABC123/left-main")
  */
 export async function POST(req: NextRequest) {
+  const userRole = await getUserRole();
+  if (!userRole || !canEditImages(userRole.role)) {
+    return NextResponse.json(
+      { error: "Not authorized to upload images" },
+      { status: 403 }
+    );
+  }
+
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
 
@@ -32,8 +42,17 @@ export async function POST(req: NextRequest) {
  * DELETE /api/upload
  *
  * Deletes a blob by its URL.
+ * Requires at least editor role.
  */
 export async function DELETE(req: NextRequest) {
+  const userRole = await getUserRole();
+  if (!userRole || !canEditImages(userRole.role)) {
+    return NextResponse.json(
+      { error: "Not authorized to delete images" },
+      { status: 403 }
+    );
+  }
+
   const { url } = await req.json();
 
   if (!url) {
