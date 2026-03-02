@@ -14,17 +14,48 @@ export type ProductImages = {
 
 export type ProductStatus = "draft" | "published" | "archived";
 
-/** Row shape of the `products` table */
+/** Row shape of the `product_codes` table (source of truth) */
+export type ProductCode = {
+  id: string;
+  product_code_data: {
+    generated?: string;
+    clasificacion?: string;
+    parte?: string;
+    numero?: string;
+    color?: string;
+    aditamento?: string;
+    [key: string]: unknown;
+  };
+  description_data: {
+    generated?: string;
+    parte?: string;
+    posicion?: string;
+    lado?: string;
+    [key: string]: unknown;
+  };
+  compatibility_data: {
+    generated?: string;
+    items?: Array<{
+      marca?: string;
+      modelo?: string;
+      subModelo?: string;
+      version?: string;
+      additional?: string;
+    }>;
+  };
+  status: string | null;
+  verified: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Row shape of the `products` table (after migration — no more code/name/description columns) */
 export type Product = {
   id: string;
   product_code_id: string;
-  code: string;
-  name: string;
-  description: string;
   price: number;
   stock: number;
-  rhino_code: string;
-  rhino_description: string;
   brand: string | null;
   brands: string[];
   model: string | null;
@@ -35,23 +66,9 @@ export type Product = {
   updated_at: string;
 };
 
-/** Row shape of the existing `product_codes` table (relevant fields) */
-export type ProductCode = {
-  id: string;
-  compatibility_data: {
-    generated?: string;
-    items?: Array<{
-      marca?: string;
-      modelo?: string;
-      subModelo?: string;
-    }>;
-  } | null;
-  description_data: {
-    generated?: string;
-  } | null;
-  product_code_data: {
-    generated?: string;
-  } | null;
+/** Product row joined with product_codes via PostgREST */
+export type ProductWithSource = Product & {
+  product_codes: ProductCode;
 };
 
 /** Paginated API response */

@@ -14,14 +14,10 @@ export const productImagesSchema = z.object({
   }),
 });
 
-/** Schema for editing a product via the form */
+/** Schema for editing a product via the form (catalog-owned fields only) */
 export const productFormSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  description: z.string().min(1, "Description is required"),
   price: z.number().min(0, "Price must be >= 0"),
   stock: z.number().int().min(0, "Stock must be >= 0"),
-  rhino_code: z.string(),
-  rhino_description: z.string(),
   brand: z.string().nullable(),
   model: z.string().nullable(),
   subModel: z.string().nullable(),

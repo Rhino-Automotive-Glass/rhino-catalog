@@ -19,7 +19,7 @@ import {
   Search,
 } from "lucide-react";
 
-import type { Product, PaginatedResponse } from "@/lib/types";
+import type { ProductWithSource, PaginatedResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -45,27 +45,33 @@ const statusColors: Record<string, string> = {
   archived: "bg-gray-100 text-gray-800",
 };
 
-const columns: ColumnDef<Product>[] = [
+const columns: ColumnDef<ProductWithSource>[] = [
   {
-    accessorKey: "code",
+    id: "code",
     header: "Code",
-    cell: ({ row }) => (
-      <Link
-        href={`/admin/products/${row.original.code}`}
-        className="font-mono text-sm text-primary hover:underline"
-      >
-        {row.original.code}
-      </Link>
-    ),
+    cell: ({ row }) => {
+      const code =
+        row.original.product_codes?.product_code_data?.generated ?? "—";
+      return (
+        <Link
+          href={`/admin/products/${row.original.id}`}
+          className="font-mono text-sm text-primary hover:underline"
+        >
+          {code}
+        </Link>
+      );
+    },
   },
   {
-    accessorKey: "name",
-    header: "Name",
-    cell: ({ getValue }) => (
-      <span className="max-w-[250px] truncate block text-sm">
-        {getValue<string>()}
-      </span>
-    ),
+    id: "description",
+    header: "Description",
+    cell: ({ row }) => {
+      const desc =
+        row.original.product_codes?.description_data?.generated ?? "—";
+      return (
+        <span className="max-w-[250px] truncate block text-sm">{desc}</span>
+      );
+    },
   },
   { accessorKey: "brand", header: "Brand" },
   { accessorKey: "model", header: "Model" },
@@ -94,7 +100,7 @@ const columns: ColumnDef<Product>[] = [
 ];
 
 export default function ProductsPage() {
-  const [data, setData] = useState<Product[]>([]);
+  const [data, setData] = useState<ProductWithSource[]>([]);
   const [rowCount, setRowCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -116,7 +122,7 @@ export default function ProductsPage() {
       if (statusFilter !== "all") params.set("status", statusFilter);
 
       const res = await fetch(`/api/products?${params}`);
-      const json: PaginatedResponse<Product> = await res.json();
+      const json: PaginatedResponse<ProductWithSource> = await res.json();
 
       if (!res.ok) throw new Error((json as unknown as { error: string }).error);
 
@@ -169,7 +175,7 @@ export default function ProductsPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search code, name, brand…"
+              placeholder="Search brand..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"

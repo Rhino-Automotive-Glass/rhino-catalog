@@ -3,17 +3,36 @@ import { supabase } from "@/lib/supabase";
 import { productFormSchema, productImagesSchema } from "@/lib/schemas";
 import { getUserRole, canEditProducts, canEditImages } from "@/lib/roles";
 
-type RouteContext = { params: Promise<{ code: string }> };
+type RouteContext = { params: Promise<{ id: string }> };
 
-/** GET /api/products/[code] — fetch a single product by code */
+/** GET /api/products/[id] — fetch a single product by id or product code */
 export async function GET(_req: NextRequest, ctx: RouteContext) {
-  const { code } = await ctx.params;
+  const { id } = await ctx.params;
 
-  const { data, error } = await supabase
+  // UUID v4 pattern — if it matches, look up by products.id; otherwise treat as a product code
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  const query = supabase
     .from("products")
-    .select("*")
-    .eq("code", code)
-    .single();
+    .select(
+      `
+      *,
+      product_codes!products_product_code_id_fkey!inner (
+        id,
+        product_code_data,
+        description_data,
+        compatibility_data,
+        status,
+        verified
+      )
+    `
+    );
+
+  const { data, error } = await (
+    isUuid
+      ? query.eq("id", id)
+      : query.eq("product_codes.product_code_data->>generated", id)
+  ).single();
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;
@@ -23,9 +42,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   return NextResponse.json(data);
 }
 
-/** PATCH /api/products/[code] — update a product (role-gated) */
+/** PATCH /api/products/[id] — update a product (role-gated) */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
-  // Authenticate and get role
   const userRole = await getUserRole();
 
   if (!userRole) {
@@ -39,7 +57,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  const { code } = await ctx.params;
+  const { id } = await ctx.params;
   const body = await req.json();
 
   // Editors: can only update images
@@ -62,7 +80,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const { data, error } = await supabase
       .from("products")
       .update({ images: imagesParsed.data })
-      .eq("code", code)
+      .eq("id", id)
       .select()
       .single();
 
@@ -73,7 +91,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json(data);
   }
 
-  // Admin / super_admin: full update
+  // Admin / super_admin: full update (catalog-owned fields only)
   const parsed = productFormSchema.partial().safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -85,7 +103,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const { data, error } = await supabase
     .from("products")
     .update(parsed.data)
-    .eq("code", code)
+    .eq("id", id)
     .select()
     .single();
 
