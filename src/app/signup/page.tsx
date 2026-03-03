@@ -14,9 +14,9 @@ export default function SignupPage() {
       subtitle="Create your account"
     >
       <SignupForm supabase={supabase} />
-      <p className="text-sm text-slate-600 text-center mt-4">
+      <p className="text-sm text-muted-foreground text-center mt-4">
         Already have an account?{' '}
-        <Link href="/login" className="text-blue-600 hover:underline">
+        <Link href="/login" className="text-primary hover:underline">
           Sign in
         </Link>
       </p>

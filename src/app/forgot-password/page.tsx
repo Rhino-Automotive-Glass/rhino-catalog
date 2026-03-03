@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
       subtitle="Reset your password"
     >
       <ForgotPasswordForm supabase={supabase} />
-      <Link href="/login" className="text-sm text-blue-600 hover:underline block text-center mt-4">
+      <Link href="/login" className="text-sm text-primary hover:underline block text-center mt-4">
         Back to sign in
       </Link>
     </AuthLayout>

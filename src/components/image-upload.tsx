@@ -70,7 +70,7 @@ export function SingleImageUpload({
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">{label}</p>
-      <div className="relative w-full aspect-square max-w-[200px] rounded-md border border-dashed flex items-center justify-center bg-muted/30 overflow-hidden">
+      <div className="relative w-full aspect-square max-w-[160px] sm:max-w-[200px] rounded-md border border-dashed flex items-center justify-center bg-muted/30 overflow-hidden">
         {uploading ? (
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         ) : value ? (
@@ -183,7 +183,7 @@ export function MultiImageUpload({
         {value.map((url, i) => (
           <div
             key={url}
-            className="relative w-[120px] h-[120px] rounded-md border overflow-hidden group"
+            className="relative w-[100px] h-[100px] sm:w-[120px] sm:h-[120px] rounded-md border overflow-hidden group"
           >
             <Image
               src={url}
@@ -203,7 +203,7 @@ export function MultiImageUpload({
           </div>
         ))}
         {value.length < max && (
-          <label className="w-[120px] h-[120px] rounded-md border border-dashed flex items-center justify-center cursor-pointer bg-muted/30 text-muted-foreground hover:bg-muted/50 transition-colors">
+          <label className="w-[100px] h-[100px] sm:w-[120px] sm:h-[120px] rounded-md border border-dashed flex items-center justify-center cursor-pointer bg-muted/30 text-muted-foreground hover:bg-muted/50 transition-colors">
             {uploading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (

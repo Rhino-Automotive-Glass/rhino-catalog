@@ -40,9 +40,9 @@ import {
 } from "@/components/ui/table";
 
 const statusColors: Record<string, string> = {
-  draft: "bg-yellow-100 text-yellow-800",
-  published: "bg-green-100 text-green-800",
-  archived: "bg-gray-100 text-gray-800",
+  draft: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+  published: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+  archived: "bg-gray-100 text-gray-800 dark:bg-gray-700/40 dark:text-gray-300",
 };
 
 const columns: ColumnDef<ProductWithSource>[] = [
@@ -160,19 +160,17 @@ export default function ProductsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Products</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage your product catalog
-          </p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-foreground">Products</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage your product catalog
+        </p>
       </div>
 
-      <div className="card p-6 md:p-8">
+      <div className="card p-4 sm:p-6 md:p-8">
         {/* Filters */}
-        <div className="flex gap-3 mb-6">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+          <div className="relative flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search brand..."
@@ -182,7 +180,7 @@ export default function ProductsPage() {
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -195,13 +193,13 @@ export default function ProductsPage() {
         </div>
 
         {/* Table */}
-        <div className="rounded-md border">
-          <Table>
+        <div className="rounded-md border overflow-x-auto -mx-4 sm:mx-0">
+          <Table className="min-w-[640px]">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="px-6 py-3">
+                    <TableHead key={header.id} className="px-4 sm:px-6 py-3 whitespace-nowrap">
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -227,7 +225,7 @@ export default function ProductsPage() {
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-6 py-4">
+                      <TableCell key={cell.id} className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
@@ -239,12 +237,12 @@ export default function ProductsPage() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between text-sm mt-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm mt-6">
           <span className="text-muted-foreground">
             {rowCount} total products
           </span>
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-muted-foreground mr-1">
               Page {pagination.pageIndex + 1} of {pageCount || 1}
             </span>
             <Button

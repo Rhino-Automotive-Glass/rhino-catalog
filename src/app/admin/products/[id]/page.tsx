@@ -182,32 +182,32 @@ export default function EditProductPage({
   const imageFolder = sourceCode !== "—" ? sourceCode : id;
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <Link href="/admin/products">
+      <div className="flex items-start gap-3 sm:gap-4 mb-6">
+        <Link href="/admin/products" className="shrink-0 mt-1">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">{sourceCode}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{sourceDescription}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-semibold text-foreground break-all">{sourceCode}</h1>
+            <Badge variant="secondary">{product.status}</Badge>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{sourceDescription}</p>
         </div>
-        <Badge variant="secondary" className="ml-auto">
-          {product.status}
-        </Badge>
       </div>
 
       {/* Role notice */}
       {isEditor && (
-        <div className="flex items-center gap-2 mb-6 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+        <div className="flex items-center gap-2 mb-6 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/50 px-3 sm:px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
           <ShieldAlert className="h-4 w-4 shrink-0" />
           <span>You have <strong>editor</strong> access. You can only update product images.</span>
         </div>
       )}
       {isViewOnly && (
-        <div className="flex items-center gap-2 mb-6 rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+        <div className="flex items-center gap-2 mb-6 rounded-lg border border-border bg-muted px-3 sm:px-4 py-3 text-sm text-muted-foreground">
           <ShieldAlert className="h-4 w-4 shrink-0" />
           <span>You have <strong>view-only</strong> access. You cannot make changes to this product.</span>
         </div>
@@ -215,26 +215,26 @@ export default function EditProductPage({
 
       <form onSubmit={form.handleSubmit(onSubmit)}>
         {/* Source Data (read-only — from product_codes) */}
-        <div className="card p-6 md:p-8 mb-6 opacity-80">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Source Data</h2>
+        <div className="card p-4 sm:p-6 md:p-8 mb-6 opacity-80">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Source Data</h2>
           <p className="text-xs text-muted-foreground mb-3">
             Managed in the Product Codes app. Read-only here.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label className="mb-1">Product Code</Label>
-              <Input value={sourceCode} readOnly className="bg-gray-100 dark:bg-gray-700" />
+              <Input value={sourceCode} readOnly className="bg-muted" />
             </div>
             <div>
               <Label className="mb-1">Description</Label>
-              <Input value={sourceDescription} readOnly className="bg-gray-100 dark:bg-gray-700" />
+              <Input value={sourceDescription} readOnly className="bg-muted" />
             </div>
             <div>
               <Label className="mb-1">Source Status</Label>
               <Input
                 value={product.product_codes?.status ?? "—"}
                 readOnly
-                className="bg-gray-100 dark:bg-gray-700"
+                className="bg-muted"
               />
             </div>
             <div>
@@ -242,7 +242,7 @@ export default function EditProductPage({
               <Input
                 value={product.product_codes?.verified ? "Yes" : "No"}
                 readOnly
-                className="bg-gray-100 dark:bg-gray-700"
+                className="bg-muted"
               />
             </div>
           </div>
@@ -250,8 +250,8 @@ export default function EditProductPage({
 
         {/* Pricing & Stock */}
         <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
-          <div className="card p-6 md:p-8 mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Pricing & Stock</h2>
+          <div className="card p-4 sm:p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-foreground mb-3">Pricing & Stock</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <Label htmlFor="price" className="mb-1">Price</Label>
@@ -309,8 +309,8 @@ export default function EditProductPage({
 
         {/* Product Details */}
         <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
-          <div className="card p-6 md:p-8 mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Product Details</h2>
+          <div className="card p-4 sm:p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-foreground mb-3">Product Details</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="brand" className="mb-1">Brand</Label>
@@ -330,8 +330,8 @@ export default function EditProductPage({
 
         {/* Images */}
         <fieldset disabled={isViewOnly} className={isViewOnly ? "opacity-60" : undefined}>
-          <div className="card p-6 md:p-8 mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Images</h2>
+          <div className="card p-4 sm:p-6 md:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-foreground mb-3">Images</h2>
 
             {/* Main images */}
             <div className="mb-6">
@@ -383,13 +383,13 @@ export default function EditProductPage({
 
         {/* Save — hidden for view-only roles */}
         {!isViewOnly ? (
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
             <Link href="/admin/products">
-              <Button variant="outline" type="button">
+              <Button variant="outline" type="button" className="w-full sm:w-auto">
                 Cancel
               </Button>
             </Link>
-            <Button type="submit" disabled={saving || !form.formState.isDirty}>
+            <Button type="submit" disabled={saving || !form.formState.isDirty} className="w-full sm:w-auto">
               {saving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -401,7 +401,7 @@ export default function EditProductPage({
         ) : (
           <div className="flex justify-end">
             <Link href="/admin/products">
-              <Button variant="outline" type="button">
+              <Button variant="outline" type="button" className="w-full sm:w-auto">
                 Back to list
               </Button>
             </Link>

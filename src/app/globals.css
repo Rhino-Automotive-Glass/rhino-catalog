@@ -125,8 +125,5 @@
 }
 
 .card {
-  @apply bg-white border border-[#e2e8f0] shadow-sm rounded-lg;
-}
-.dark .card {
-  @apply bg-gray-800 border-[#374151];
+  @apply bg-card text-card-foreground border border-border shadow-sm rounded-lg;
 }
