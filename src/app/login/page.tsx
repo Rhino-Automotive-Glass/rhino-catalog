@@ -13,7 +13,7 @@ export default function LoginPage() {
       title="Rhino Catalog"
       subtitle="Sign in to manage your products"
     >
-      <LoginForm supabase={supabase} redirectTo="/admin/products" />
+      <LoginForm supabase={supabase} redirectTo="/catalog" />
       <div className="flex flex-col items-center gap-2 text-sm mt-4">
         <Link href="/forgot-password" className="text-primary hover:underline">
           Forgot your password?
