@@ -136,33 +136,37 @@ export default function CatalogPage() {
             {products.map((product) => {
               const imageUrl = getProductImage(product);
               return (
-                <div key={product.id} className="group cursor-pointer relative aspect-square rounded-xl overflow-hidden bg-neutral-200 dark:bg-neutral-800 transition-all duration-200 hover:ring-2 hover:ring-cyan-400/60 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)]">
-                  {imageUrl ? (
-                    <Image
-                      src={imageUrl}
-                      alt={`${product.brand ?? ""} ${product.model ?? ""}`}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <Image
-                      src="/van.webp"
-                      alt="No image available"
-                      fill
-                      className="object-cover dark:invert"
-                    />
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 p-3 space-y-0.5 bg-black/50 backdrop-blur-md border-t border-white/10">
-                    {product.brand && (
-                      <p className="text-sm font-semibold text-white">{product.brand}</p>
+                <div key={product.id} className="group cursor-pointer rounded-xl overflow-hidden bg-white border border-gray-200 transition-all duration-200 hover:ring-2 hover:ring-cyan-400/60 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)]">
+                  <div className="relative aspect-[10/7]">
+                    {imageUrl ? (
+                      <Image
+                        src={imageUrl}
+                        alt={`${product.brand ?? ""} ${product.model ?? ""}`}
+                        fill
+                        className="object-contain group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <Image
+                        src="/van.png"
+                        alt="No image available"
+                        fill
+                        className="object-contain"
+                      />
                     )}
-                    {product.model && (
-                      <p className="text-sm text-white/80">{product.model}</p>
-                    )}
-                    <p className="text-xs text-white/60 truncate">
+                  </div>
+                  <div className="p-3 space-y-0.5 border-t border-gray-200 bg-gray-50">
+                    <div className="flex items-center justify-between gap-2">
+                      {product.brand && (
+                        <p className="text-lg font-semibold text-gray-900">{product.brand}</p>
+                      )}
+                      {product.model && (
+                        <p className="text-lg text-gray-600">{product.model}</p>
+                      )}
+                    </div>
+                    <p className="text-base text-gray-500 truncate">
                       {product.product_codes?.product_code_data?.generated ?? "—"}
                     </p>
-                    <p className="text-xs text-white/50 truncate">
+                    <p className="text-base text-gray-400 truncate">
                       {product.product_codes?.description_data?.generated ?? "—"}
                     </p>
                   </div>
