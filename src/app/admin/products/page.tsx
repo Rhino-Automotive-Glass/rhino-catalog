@@ -16,12 +16,15 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Loader2,
-  Search,
 } from "lucide-react";
 
-import type { ProductWithSource, PaginatedResponse } from "@/lib/types";
+import type {
+  Brand,
+  BrandListResponse,
+  ProductWithSource,
+  PaginatedResponse,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -73,7 +76,11 @@ const columns: ColumnDef<ProductWithSource>[] = [
       );
     },
   },
-  { accessorKey: "brand", header: "Brand" },
+  {
+    id: "primaryBrand",
+    header: "Primary Brand",
+    cell: ({ row }) => row.original.primary_brand?.name ?? "—",
+  },
   { accessorKey: "model", header: "Model" },
   {
     accessorKey: "price",
@@ -104,7 +111,8 @@ export default function ProductsPage() {
   const [rowCount, setRowCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const [search, setSearch] = useState("");
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [primaryBrandFilter, setPrimaryBrandFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -118,7 +126,7 @@ export default function ProductsPage() {
         page: String(pagination.pageIndex + 1),
         pageSize: String(pagination.pageSize),
       });
-      if (search) params.set("search", search);
+      if (primaryBrandFilter !== "all") params.set("primaryBrandId", primaryBrandFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
 
       const res = await fetch(`/api/products?${params}`);
@@ -135,16 +143,27 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.pageIndex, pagination.pageSize, search, statusFilter]);
+  }, [pagination.pageIndex, pagination.pageSize, primaryBrandFilter, statusFilter]);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Debounced search: reset to page 0 when search/status changes
+  useEffect(() => {
+    fetch("/api/brands?scope=primary")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load brands"))))
+      .then((data: BrandListResponse) => setBrands(data.brands ?? []))
+      .catch((err: unknown) => {
+        toast.error("Failed to load brands", {
+          description: err instanceof Error ? err.message : "Unknown error",
+        });
+      });
+  }, []);
+
+  // Reset to page 0 when filters change
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-  }, [search, statusFilter]);
+  }, [primaryBrandFilter, statusFilter]);
 
   const table = useReactTable({
     data,
@@ -170,15 +189,19 @@ export default function ProductsPage() {
       <div className="card p-4 sm:p-6 md:p-8">
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="relative flex-1 sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search brand..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+          <Select value={primaryBrandFilter} onValueChange={setPrimaryBrandFilter}>
+            <SelectTrigger className="w-full sm:w-[220px]">
+              <SelectValue placeholder="Primary brand" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All primary brands</SelectItem>
+              {brands.map((brand) => (
+                <SelectItem key={brand.id} value={brand.id}>
+                  {brand.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder="Status" />

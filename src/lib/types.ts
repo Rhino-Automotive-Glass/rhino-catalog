@@ -14,6 +14,11 @@ export type ProductImages = {
 
 export type ProductStatus = "draft" | "published" | "archived";
 
+export type Brand = {
+  id: string;
+  name: string;
+};
+
 /** Row shape of the `product_codes` table (source of truth) */
 export type ProductCode = {
   id: string;
@@ -56,8 +61,9 @@ export type Product = {
   product_code_id: string;
   price: number;
   stock: number;
-  brand: string | null;
-  brands: string[];
+  primary_brand_id: string | null;
+  primary_brand: Brand | null;
+  additional_brands: Brand[];
   model: string | null;
   subModel: string | null;
   images: ProductImages;
@@ -77,4 +83,8 @@ export type PaginatedResponse<T> = {
   count: number;
   page: number;
   pageSize: number;
+};
+
+export type BrandListResponse = {
+  brands: Brand[];
 };

@@ -14,7 +14,12 @@ import {
 } from "@/components/ui/select";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "@/components/logout-button";
-import type { ProductWithSource, PaginatedResponse } from "@/lib/types";
+import type {
+  Brand,
+  BrandListResponse,
+  ProductWithSource,
+  PaginatedResponse,
+} from "@/lib/types";
 
 const PAGE_SIZE = 40;
 
@@ -23,15 +28,18 @@ export default function CatalogPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [brands, setBrands] = useState<string[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [brandFilter, setBrandFilter] = useState("all");
 
-  // Fetch brands for filter
+  // Fetch primary brands for filter
   useEffect(() => {
-    fetch("/api/brands")
-      .then((r) => r.json())
-      .then((d) => setBrands(d.brands ?? []))
-      .catch(() => {});
+    fetch("/api/brands?scope=primary")
+      .then(async (r) => {
+        const json = (await r.json()) as BrandListResponse & { error?: string };
+        if (!r.ok) throw new Error(json.error ?? "Failed to load brands");
+        setBrands(Array.isArray(json.brands) ? json.brands : []);
+      })
+      .catch(() => setBrands([]));
   }, []);
 
   // Reset page when filter changes
@@ -47,13 +55,20 @@ export default function CatalogPage() {
       pageSize: String(PAGE_SIZE),
     });
     if (brandFilter && brandFilter !== "all") {
-      params.set("search", brandFilter);
+      params.set("primaryBrandId", brandFilter);
     }
     try {
       const res = await fetch(`/api/products?${params}`);
-      const json: PaginatedResponse<ProductWithSource> = await res.json();
-      setProducts(json.data);
-      setTotalCount(json.count);
+      const json = (await res.json()) as PaginatedResponse<ProductWithSource> & {
+        error?: string;
+      };
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load products");
+      }
+
+      setProducts(Array.isArray(json.data) ? json.data : []);
+      setTotalCount(typeof json.count === "number" ? json.count : 0);
     } catch {
       setProducts([]);
       setTotalCount(0);
@@ -114,8 +129,8 @@ export default function CatalogPage() {
             <SelectContent>
               <SelectItem value="all">All brands</SelectItem>
               {brands.map((brand) => (
-                <SelectItem key={brand} value={brand}>
-                  {brand}
+                <SelectItem key={brand.id} value={brand.id}>
+                  {brand.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -141,7 +156,7 @@ export default function CatalogPage() {
                     {imageUrl ? (
                       <Image
                         src={imageUrl}
-                        alt={`${product.brand ?? ""} ${product.model ?? ""}`}
+                        alt={`${product.primary_brand?.name ?? ""} ${product.model ?? ""}`}
                         fill
                         className="object-contain group-hover:scale-105 transition-transform duration-300"
                       />
@@ -156,8 +171,8 @@ export default function CatalogPage() {
                   </div>
                   <div className="p-3 space-y-0.5 border-t border-gray-200 bg-gray-50">
                     <div className="flex items-center justify-between gap-2">
-                      {product.brand && (
-                        <p className="text-lg font-semibold text-gray-900">{product.brand}</p>
+                      {product.primary_brand && (
+                        <p className="text-lg font-semibold text-gray-900">{product.primary_brand.name}</p>
                       )}
                       {product.model && (
                         <p className="text-lg text-gray-600">{product.model}</p>
@@ -169,6 +184,11 @@ export default function CatalogPage() {
                     <p className="text-base text-gray-400 truncate">
                       {product.product_codes?.description_data?.generated ?? "—"}
                     </p>
+                    {product.additional_brands.length > 0 && (
+                      <p className="text-sm text-gray-400 truncate">
+                        Also matched to: {product.additional_brands.map((brand) => brand.name).join(", ")}
+                      </p>
+                    )}
                   </div>
                 </div>
               );

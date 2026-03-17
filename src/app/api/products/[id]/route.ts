@@ -1,38 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-server";
 import { productFormSchema, productImagesSchema } from "@/lib/schemas";
 import { getUserRole, canEditProducts, canEditImages } from "@/lib/roles";
+import {
+  mapProductRow,
+  PRODUCT_WITH_SOURCE_INNER_SELECT,
+} from "@/lib/product-query";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-/** GET /api/products/[id] — fetch a single product by id or product code */
-export async function GET(_req: NextRequest, ctx: RouteContext) {
-  const { id } = await ctx.params;
+type ProductBrandStateRow = {
+  primary_brand_id: string | null;
+  status: "draft" | "published" | "archived";
+  product_brands: Array<{ brand_id: string }>;
+};
 
-  // UUID v4 pattern — if it matches, look up by products.id; otherwise treat as a product code
+async function fetchProductByIdentifier(id: string) {
+  const supabase = await createClient();
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   const query = supabase
     .from("products")
-    .select(
-      `
-      *,
-      product_codes!products_product_code_id_fkey!inner (
-        id,
-        product_code_data,
-        description_data,
-        compatibility_data,
-        status,
-        verified
-      )
-    `
-    );
+    .select(PRODUCT_WITH_SOURCE_INNER_SELECT);
 
   const { data, error } = await (
     isUuid
       ? query.eq("id", id)
       : query.eq("product_codes.product_code_data->>generated", id)
   ).single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  return {
+    data: mapProductRow(data),
+    error: null,
+  };
+}
+
+/** GET /api/products/[id] — fetch a single product by id or product code */
+export async function GET(_req: NextRequest, ctx: RouteContext) {
+  const { id } = await ctx.params;
+  const { data, error } = await fetchProductByIdentifier(id);
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;
@@ -44,6 +54,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 /** PATCH /api/products/[id] — update a product (role-gated) */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
+  const supabase = await createClient();
   const userRole = await getUserRole();
 
   if (!userRole) {
@@ -100,15 +111,85 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  const { data, error } = await supabase
-    .from("products")
-    .update(parsed.data)
-    .eq("id", id)
-    .select()
-    .single();
+  const hasPrimaryBrandField = Object.prototype.hasOwnProperty.call(parsed.data, "primary_brand_id");
+  const hasAdditionalBrandField = Object.prototype.hasOwnProperty.call(parsed.data, "additional_brand_ids");
+  const shouldLoadCurrentBrandState =
+    hasPrimaryBrandField || hasAdditionalBrandField || parsed.data.status !== undefined;
+
+  let currentBrandState: ProductBrandStateRow | null = null;
+
+  if (shouldLoadCurrentBrandState) {
+    const { data: currentData, error: currentError } = await supabase
+      .from("products")
+      .select(`
+        primary_brand_id,
+        status,
+        product_brands:product_brands!product_brands_product_id_fkey (
+          brand_id
+        )
+      `)
+      .eq("id", id)
+      .single();
+
+    if (currentError) {
+      const status = currentError.code === "PGRST116" ? 404 : 500;
+      return NextResponse.json({ error: currentError.message }, { status });
+    }
+
+    currentBrandState = currentData as ProductBrandStateRow;
+  }
+
+  const nextPrimaryBrandId =
+    parsed.data.primary_brand_id !== undefined
+      ? parsed.data.primary_brand_id
+      : currentBrandState?.primary_brand_id ?? null;
+  const nextAdditionalBrandIds =
+    parsed.data.additional_brand_ids !== undefined
+      ? parsed.data.additional_brand_ids.filter((brandId) => brandId !== nextPrimaryBrandId)
+      : (currentBrandState?.product_brands ?? [])
+          .map((membership) => membership.brand_id)
+          .filter((brandId) => brandId !== nextPrimaryBrandId);
+  const nextStatus = parsed.data.status ?? currentBrandState?.status;
+
+  if (nextStatus === "published" && !nextPrimaryBrandId) {
+    return NextResponse.json(
+      { error: "Published products must have a primary brand" },
+      { status: 400 }
+    );
+  }
+
+  if (hasPrimaryBrandField || hasAdditionalBrandField) {
+    const { error: brandError } = await supabase.rpc("set_product_brands", {
+      p_product_id: id,
+      p_primary_brand_id: nextPrimaryBrandId,
+      p_additional_brand_ids: nextAdditionalBrandIds,
+    });
+
+    if (brandError) {
+      return NextResponse.json({ error: brandError.message }, { status: 500 });
+    }
+  }
+
+  const productUpdates = { ...parsed.data };
+  delete productUpdates.primary_brand_id;
+  delete productUpdates.additional_brand_ids;
+
+  if (Object.keys(productUpdates).length > 0) {
+    const { error: updateError } = await supabase
+      .from("products")
+      .update(productUpdates)
+      .eq("id", id);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+  }
+
+  const { data, error } = await fetchProductByIdentifier(id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.code === "PGRST116" ? 404 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 
   return NextResponse.json(data);

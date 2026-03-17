@@ -8,9 +8,10 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Save, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 
-import type { ProductWithSource } from "@/lib/types";
+import type { Brand, BrandListResponse, ProductWithSource } from "@/lib/types";
 import type { RoleName } from "@/lib/roles";
 import { productFormSchema, type ProductFormValues, emptyImages } from "@/lib/schemas";
+import { BrandMultiSelect } from "@/components/brand-multi-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,13 +47,15 @@ export default function EditProductPage({
   const [saving, setSaving] = useState(false);
   const [role, setRole] = useState<RoleName | null>(null);
   const [roleLoading, setRoleLoading] = useState(true);
+  const [brandOptions, setBrandOptions] = useState<Brand[]>([]);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
     defaultValues: {
       price: 0,
       stock: 0,
-      brand: null,
+      primary_brand_id: null,
+      additional_brand_ids: [],
       model: null,
       subModel: null,
       status: "draft",
@@ -90,7 +93,8 @@ export default function EditProductPage({
       form.reset({
         price: Number(data.price),
         stock: data.stock,
-        brand: data.brand,
+        primary_brand_id: data.primary_brand_id,
+        additional_brand_ids: data.additional_brands.map((brand) => brand.id),
         model: data.model,
         subModel: data.subModel,
         status: data.status,
@@ -108,6 +112,13 @@ export default function EditProductPage({
   useEffect(() => {
     fetchProduct();
   }, [fetchProduct]);
+
+  useEffect(() => {
+    fetch("/api/brands")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load brands"))))
+      .then((data: BrandListResponse) => setBrandOptions(data.brands ?? []))
+      .catch(() => setBrandOptions([]));
+  }, []);
 
   const onSubmit = async (values: ProductFormValues) => {
     if (!role) return;
@@ -173,6 +184,9 @@ export default function EditProductPage({
   const isEditor = canEditImages(role) && !isAdmin;
   const isViewOnly = !canEditImages(role);
   const images = form.watch("images");
+  const primaryBrandId = form.watch("primary_brand_id");
+  const additionalBrandIds = form.watch("additional_brand_ids");
+  const additionalBrandOptions = brandOptions.filter((brand) => brand.id !== primaryBrandId);
 
   // Source-of-truth data from product_codes (read-only in this app)
   const sourceCode = product.product_codes?.product_code_data?.generated ?? "—";
@@ -196,6 +210,9 @@ export default function EditProductPage({
             <Badge variant="secondary">{product.status}</Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{sourceDescription}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Primary brand: {product.primary_brand?.name ?? "Unassigned"}
+          </p>
         </div>
       </div>
 
@@ -313,8 +330,34 @@ export default function EditProductPage({
             <h2 className="text-lg font-semibold text-foreground mb-3">Product Details</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="brand" className="mb-1">Brand</Label>
-                <Input id="brand" {...form.register("brand")} />
+                <Label htmlFor="primary_brand_id" className="mb-1">Primary Brand</Label>
+                <Select
+                  value={primaryBrandId ?? "none"}
+                  onValueChange={(value) => {
+                    const nextPrimaryBrandId = value === "none" ? null : value;
+                    form.setValue("primary_brand_id", nextPrimaryBrandId, {
+                      shouldDirty: true,
+                    });
+                    form.setValue(
+                      "additional_brand_ids",
+                      additionalBrandIds.filter((brandId) => brandId !== nextPrimaryBrandId),
+                      { shouldDirty: true }
+                    );
+                  }}
+                  disabled={!isAdmin}
+                >
+                  <SelectTrigger id="primary_brand_id">
+                    <SelectValue placeholder="Select a primary brand" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No primary brand</SelectItem>
+                    {brandOptions.map((brand) => (
+                      <SelectItem key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="model" className="mb-1">Model</Label>
@@ -324,6 +367,22 @@ export default function EditProductPage({
                 <Label htmlFor="subModel" className="mb-1">Sub-Model</Label>
                 <Input id="subModel" {...form.register("subModel")} />
               </div>
+            </div>
+            <div className="mt-4">
+              <Label className="mb-1">Additional Brands</Label>
+              <BrandMultiSelect
+                disabled={!isAdmin}
+                options={additionalBrandOptions}
+                selectedIds={additionalBrandIds}
+                onChange={(nextSelectedIds) =>
+                  form.setValue("additional_brand_ids", nextSelectedIds, {
+                    shouldDirty: true,
+                  })
+                }
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                Additional brands are optional edge-case memberships. Catalog browsing still uses the primary brand.
+              </p>
             </div>
           </div>
         </fieldset>
