@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import {
+  PRODUCT_WITH_SOURCE_BRAND_FILTER_SELECT,
   mapProductRow,
   PRODUCT_WITH_SOURCE_SELECT,
 } from "@/lib/product-query";
@@ -32,7 +33,12 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("products")
-    .select(PRODUCT_WITH_SOURCE_SELECT, { count: "exact" })
+    .select(
+      brandId && brandId !== "all"
+        ? PRODUCT_WITH_SOURCE_BRAND_FILTER_SELECT
+        : PRODUCT_WITH_SOURCE_SELECT,
+      { count: "exact" }
+    )
     .order("created_at", { ascending: false })
     .range(from, to);
 

@@ -62,6 +62,33 @@ export const PRODUCT_WITH_SOURCE_SELECT = `
   )
 `;
 
+export const PRODUCT_WITH_SOURCE_BRAND_FILTER_SELECT = `
+  id,
+  product_code_id,
+  price,
+  stock,
+  primary_brand_id,
+  model,
+  subModel,
+  images,
+  status,
+  created_at,
+  updated_at,
+  primary_brand:brands!products_primary_brand_id_fkey (
+    id,
+    name
+  ),
+  product_brands:product_brands!product_brands_product_id_fkey!inner (
+    brand:brands!product_brands_brand_id_fkey (
+      id,
+      name
+    )
+  ),
+  product_codes!products_product_code_id_fkey (
+    ${PRODUCT_CODE_SELECT}
+  )
+`;
+
 export const PRODUCT_WITH_SOURCE_INNER_SELECT = `
   id,
   product_code_id,

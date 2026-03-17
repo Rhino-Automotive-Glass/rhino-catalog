@@ -21,6 +21,68 @@ export async function GET(req: NextRequest) {
   const scope = req.nextUrl.searchParams.get("scope") ?? "all";
   const status = req.nextUrl.searchParams.get("status") ?? "all";
 
+  if (scope === "catalog") {
+    const brandCounts = new Map<string, RawBrand & { productCount: number }>();
+    let from = 0;
+    const batchSize = 1000;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("product_brands")
+        .select(`
+          product_id,
+          brand:brands!product_brands_brand_id_fkey (
+            id,
+            name
+          )
+        `)
+        .order("product_id", { ascending: true })
+        .range(from, from + batchSize - 1);
+
+      if (error) {
+        console.error("GET /api/brands catalog scope failed", {
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          message: error.message,
+        });
+
+        return NextResponse.json(
+          {
+            error: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+          },
+          { status: 500 }
+        );
+      }
+
+      for (const row of data ?? []) {
+        const brand = unwrapRelation(row.brand as RawBrand | RawBrand[] | null);
+        if (!brand) continue;
+
+        const current = brandCounts.get(brand.id);
+        if (current) {
+          current.productCount += 1;
+          continue;
+        }
+
+        brandCounts.set(brand.id, {
+          ...brand,
+          productCount: 1,
+        });
+      }
+
+      if (!data || data.length < batchSize) break;
+      from += batchSize;
+    }
+
+    return NextResponse.json<BrandListResponse>({
+      brands: [...brandCounts.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    });
+  }
+
   if (scope === "primary") {
     const allBrands = new Map<string, RawBrand>();
     let from = 0;

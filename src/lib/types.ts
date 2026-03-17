@@ -17,6 +17,7 @@ export type ProductStatus = "draft" | "published" | "archived";
 export type Brand = {
   id: string;
   name: string;
+  productCount?: number;
 };
 
 /** Row shape of the `product_codes` table (source of truth) */
