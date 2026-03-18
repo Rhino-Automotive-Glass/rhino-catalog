@@ -19,7 +19,7 @@ export const productFormSchema = z.object({
   price: z.number().min(0, "Price must be >= 0"),
   stock: z.number().int().min(0, "Stock must be >= 0"),
   primary_brand_id: z.string().uuid().nullable(),
-  additional_brand_ids: z.array(z.string().uuid()).default([]),
+  additional_brand_ids: z.array(z.string().uuid()),
   model: z.string().nullable(),
   subModel: z.string().nullable(),
   status: z.enum(["draft", "published", "archived"]),
