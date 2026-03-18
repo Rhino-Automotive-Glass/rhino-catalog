@@ -1,5 +1,9 @@
 "use client";
 
+// This page is entirely client-driven (it fetches brands/products on the client and depends on URL state).
+// For deployments that attempt static prerender/export, force dynamic to avoid build-time prerender errors.
+export const dynamic = "force-dynamic";
+
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
