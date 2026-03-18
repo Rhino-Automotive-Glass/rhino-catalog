@@ -77,9 +77,23 @@ const columns: ColumnDef<ProductWithSource>[] = [
     },
   },
   {
-    id: "primaryBrand",
-    header: "Primary Brand",
-    cell: ({ row }) => row.original.primary_brand?.name ?? "—",
+    id: "brand",
+    header: "Brand",
+    cell: ({ row }) => {
+      const primaryBrand = row.original.primary_brand?.name ?? "—";
+      const additionalBrands = row.original.additional_brands;
+
+      return (
+        <div className="min-w-[140px]">
+          <div className="font-medium">{primaryBrand}</div>
+          {additionalBrands.length > 0 && (
+            <div className="text-xs text-muted-foreground truncate">
+              Also: {additionalBrands.map((brand) => brand.name).join(", ")}
+            </div>
+          )}
+        </div>
+      );
+    },
   },
   { accessorKey: "model", header: "Model" },
   {
