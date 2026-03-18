@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { z } from "zod";
 import { productFormSchema, productImagesSchema } from "@/lib/schemas";
 import { getUserRole, canEditProducts, canEditImages } from "@/lib/roles";
-import {
-  mapProductRow,
-  PRODUCT_WITH_SOURCE_INNER_SELECT,
-} from "@/lib/product-query";
+import { mapProductRow, PRODUCT_WITH_SOURCE_INNER_SELECT } from "@/lib/product-query";
 
 type RouteContext = { params: Promise<{ id: string }> };
-
-type ProductBrandStateRow = {
-  primary_brand_id: string | null;
-  status: "draft" | "published" | "archived";
-  product_brands: Array<{ brand_id: string }>;
-};
 
 async function fetchProductByIdentifier(id: string) {
   const supabase = await createClient();
@@ -102,87 +94,30 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json(data);
   }
 
-  // Admin / super_admin: full update (catalog-owned fields only)
-  const parsed = productFormSchema.partial().safeParse(body);
+  // Admin / super_admin: only catalog-owned fields are editable here
+  const editableSchema = z
+    .object({
+      price: productFormSchema.shape.price,
+      stock: productFormSchema.shape.stock,
+      status: productFormSchema.shape.status,
+      images: productImagesSchema,
+    })
+    .partial();
+
+  const parsed = editableSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Validation failed", details: parsed.error.flatten() },
       { status: 400 }
     );
   }
+  const { error: updateError } = await supabase
+    .from("products")
+    .update(parsed.data)
+    .eq("id", id);
 
-  const hasPrimaryBrandField = Object.prototype.hasOwnProperty.call(parsed.data, "primary_brand_id");
-  const hasAdditionalBrandField = Object.prototype.hasOwnProperty.call(parsed.data, "additional_brand_ids");
-  const shouldLoadCurrentBrandState =
-    hasPrimaryBrandField || hasAdditionalBrandField || parsed.data.status !== undefined;
-
-  let currentBrandState: ProductBrandStateRow | null = null;
-
-  if (shouldLoadCurrentBrandState) {
-    const { data: currentData, error: currentError } = await supabase
-      .from("products")
-      .select(`
-        primary_brand_id,
-        status,
-        product_brands:product_brands!product_brands_product_id_fkey (
-          brand_id
-        )
-      `)
-      .eq("id", id)
-      .single();
-
-    if (currentError) {
-      const status = currentError.code === "PGRST116" ? 404 : 500;
-      return NextResponse.json({ error: currentError.message }, { status });
-    }
-
-    currentBrandState = currentData as ProductBrandStateRow;
-  }
-
-  const nextPrimaryBrandId =
-    parsed.data.primary_brand_id !== undefined
-      ? parsed.data.primary_brand_id
-      : currentBrandState?.primary_brand_id ?? null;
-  const nextAdditionalBrandIds =
-    parsed.data.additional_brand_ids !== undefined
-      ? parsed.data.additional_brand_ids.filter((brandId) => brandId !== nextPrimaryBrandId)
-      : (currentBrandState?.product_brands ?? [])
-          .map((membership) => membership.brand_id)
-          .filter((brandId) => brandId !== nextPrimaryBrandId);
-  const nextStatus = parsed.data.status ?? currentBrandState?.status;
-
-  if (nextStatus === "published" && !nextPrimaryBrandId) {
-    return NextResponse.json(
-      { error: "Published products must have a primary brand" },
-      { status: 400 }
-    );
-  }
-
-  if (hasPrimaryBrandField || hasAdditionalBrandField) {
-    const { error: brandError } = await supabase.rpc("set_product_brands", {
-      p_product_id: id,
-      p_primary_brand_id: nextPrimaryBrandId,
-      p_additional_brand_ids: nextAdditionalBrandIds,
-    });
-
-    if (brandError) {
-      return NextResponse.json({ error: brandError.message }, { status: 500 });
-    }
-  }
-
-  const productUpdates = { ...parsed.data };
-  delete productUpdates.primary_brand_id;
-  delete productUpdates.additional_brand_ids;
-
-  if (Object.keys(productUpdates).length > 0) {
-    const { error: updateError } = await supabase
-      .from("products")
-      .update(productUpdates)
-      .eq("id", id);
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
-    }
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
   const { data, error } = await fetchProductByIdentifier(id);

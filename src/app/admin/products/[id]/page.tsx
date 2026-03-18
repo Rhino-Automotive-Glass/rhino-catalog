@@ -8,10 +8,9 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Save, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 
-import type { Brand, BrandListResponse, ProductWithSource } from "@/lib/types";
+import type { ProductWithSource } from "@/lib/types";
 import type { RoleName } from "@/lib/roles";
 import { productFormSchema, type ProductFormValues, emptyImages } from "@/lib/schemas";
-import { BrandMultiSelect } from "@/components/brand-multi-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,7 +46,6 @@ export default function EditProductPage({
   const [saving, setSaving] = useState(false);
   const [role, setRole] = useState<RoleName | null>(null);
   const [roleLoading, setRoleLoading] = useState(true);
-  const [brandOptions, setBrandOptions] = useState<Brand[]>([]);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
@@ -113,20 +111,20 @@ export default function EditProductPage({
     fetchProduct();
   }, [fetchProduct]);
 
-  useEffect(() => {
-    fetch("/api/brands")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load brands"))))
-      .then((data: BrandListResponse) => setBrandOptions(data.brands ?? []))
-      .catch(() => setBrandOptions([]));
-  }, []);
-
   const onSubmit = async (values: ProductFormValues) => {
     if (!role) return;
 
     setSaving(true);
     try {
-      // Editors only send images
-      const payload = canEditProducts(role) ? values : { images: values.images };
+      // Only catalog-owned fields are editable in this app
+      const payload = canEditProducts(role)
+        ? {
+            price: values.price,
+            stock: values.stock,
+            status: values.status,
+            images: values.images,
+          }
+        : { images: values.images };
 
       const res = await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "PATCH",
@@ -184,9 +182,10 @@ export default function EditProductPage({
   const isEditor = canEditImages(role) && !isAdmin;
   const isViewOnly = !canEditImages(role);
   const images = form.watch("images");
-  const primaryBrandId = form.watch("primary_brand_id");
-  const additionalBrandIds = form.watch("additional_brand_ids");
-  const additionalBrandOptions = brandOptions.filter((brand) => brand.id !== primaryBrandId);
+  const compatibilityItems = product.product_codes?.compatibility_data?.items ?? [];
+  const sourceUpdatedAt = product.product_codes?.updated_at
+    ? new Date(product.product_codes.updated_at).toLocaleString()
+    : "—";
 
   // Source-of-truth data from product_codes (read-only in this app)
   const sourceCode = product.product_codes?.product_code_data?.generated ?? "—";
@@ -262,6 +261,10 @@ export default function EditProductPage({
                 className="bg-muted"
               />
             </div>
+            <div>
+              <Label className="mb-1">Last Synced from Rhino Code</Label>
+              <Input value={sourceUpdatedAt} readOnly className="bg-muted" />
+            </div>
           </div>
         </div>
 
@@ -324,64 +327,49 @@ export default function EditProductPage({
           </div>
         </fieldset>
 
-        {/* Product Details */}
-        <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
+        {/* Product Details (read-only, source of truth is product code DB) */}
+        <fieldset disabled className="opacity-60">
           <div className="card p-4 sm:p-6 md:p-8 mb-6">
             <h2 className="text-lg font-semibold text-foreground mb-3">Product Details</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="primary_brand_id" className="mb-1">Primary Brand</Label>
-                <Select
-                  value={primaryBrandId ?? "none"}
-                  onValueChange={(value) => {
-                    const nextPrimaryBrandId = value === "none" ? null : value;
-                    form.setValue("primary_brand_id", nextPrimaryBrandId, {
-                      shouldDirty: true,
-                    });
-                    form.setValue(
-                      "additional_brand_ids",
-                      additionalBrandIds.filter((brandId) => brandId !== nextPrimaryBrandId),
-                      { shouldDirty: true }
-                    );
-                  }}
-                  disabled={!isAdmin}
-                >
-                  <SelectTrigger id="primary_brand_id">
-                    <SelectValue placeholder="Select a primary brand" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No primary brand</SelectItem>
-                    {brandOptions.map((brand) => (
-                      <SelectItem key={brand.id} value={brand.id}>
-                        {brand.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="mb-1">Primary Brand</Label>
+                <Input value={product.primary_brand?.name ?? "Unassigned"} readOnly className="bg-muted" />
               </div>
               <div>
                 <Label htmlFor="model" className="mb-1">Model</Label>
-                <Input id="model" {...form.register("model")} />
+                <Input id="model" {...form.register("model")} disabled />
               </div>
               <div>
                 <Label htmlFor="subModel" className="mb-1">Sub-Model</Label>
-                <Input id="subModel" {...form.register("subModel")} />
+                <Input id="subModel" {...form.register("subModel")} disabled />
               </div>
             </div>
             <div className="mt-4">
-              <Label className="mb-1">Additional Brands</Label>
-              <BrandMultiSelect
-                disabled={!isAdmin}
-                options={additionalBrandOptions}
-                selectedIds={additionalBrandIds}
-                onChange={(nextSelectedIds) =>
-                  form.setValue("additional_brand_ids", nextSelectedIds, {
-                    shouldDirty: true,
-                  })
-                }
-              />
+              <Label className="mb-1">Product Compatibility</Label>
+              {compatibilityItems.length === 0 ? (
+                <Input value="No compatibility rows in product_codes" readOnly className="bg-muted" />
+              ) : (
+                <div className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  {compatibilityItems.map((item, index) => {
+                    const parts = [
+                      item.marca,
+                      item.modelo,
+                      item.subModelo,
+                      item.version,
+                      item.additional,
+                    ].filter(Boolean);
+
+                    return (
+                      <p key={index} className="truncate">
+                        {parts.join(" / ")}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
               <p className="mt-2 text-xs text-muted-foreground">
-                Additional brands are optional edge-case memberships. Catalog browsing still uses the primary brand.
+                Compatibility is managed by the Product Codes app and mirrored here as read-only data.
               </p>
             </div>
           </div>

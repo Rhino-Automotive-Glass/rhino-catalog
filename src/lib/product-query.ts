@@ -32,7 +32,10 @@ const PRODUCT_CODE_SELECT = `
   description_data,
   compatibility_data,
   status,
-  verified
+  verified,
+  notes,
+  created_at,
+  updated_at
 `;
 
 export const PRODUCT_WITH_SOURCE_SELECT = `
