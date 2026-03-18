@@ -21,7 +21,8 @@ type RawProductRow = {
   status: ProductWithSource["status"];
   created_at: string;
   updated_at: string;
-  product_codes: ProductCode;
+  // PostgREST relation payloads are sometimes typed as arrays even when 1:1.
+  product_codes: ProductCode | ProductCode[] | null;
   primary_brand: RawBrand | RawBrand[] | null;
   product_brands: RawBrandRelation[] | null;
 };
@@ -136,6 +137,7 @@ function dedupeBrands(brands: Brand[]): Brand[] {
 
 export function mapProductRow(row: RawProductRow): ProductWithSource {
   const primaryBrand = unwrapRelation(row.primary_brand);
+  const productCode = unwrapRelation(row.product_codes);
   const additionalBrands = dedupeBrands(
     (row.product_brands ?? [])
       .map((item) => unwrapRelation(item.brand))
@@ -166,6 +168,19 @@ export function mapProductRow(row: RawProductRow): ProductWithSource {
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    product_codes: row.product_codes,
+    // PRODUCT_WITH_SOURCE_INNER_SELECT enforces this exists at runtime, but keep TS happy.
+    product_codes:
+      productCode ??
+      ({
+        id: "",
+        product_code_data: {},
+        description_data: {},
+        compatibility_data: {},
+        status: null,
+        verified: false,
+        notes: null,
+        created_at: "",
+        updated_at: "",
+      } as ProductCode),
   };
 }
