@@ -1,10 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Loader2, Settings } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Settings,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "@/components/logout-button";
@@ -13,6 +21,7 @@ import type {
   BrandListResponse,
   ProductWithSource,
   PaginatedResponse,
+  SubModelListResponse,
 } from "@/lib/types";
 
 const PAGE_SIZE = 40;
@@ -45,7 +54,10 @@ export default function CatalogPage() {
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(false);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [subModels, setSubModels] = useState<string[]>([]);
+  const [subModelsLoading, setSubModelsLoading] = useState(false);
   const selectedBrandId = searchParams.get("brand") ?? "";
+  const selectedSubModel = searchParams.get("subModel") ?? "";
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
 
   // Fetch catalog brands
@@ -64,46 +76,109 @@ export default function CatalogPage() {
   // Reset page when brand changes
   useEffect(() => {
     setPage(1);
+  }, [selectedBrandId, selectedSubModel]);
+
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setSubModels([]);
+      setSubModelsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setSubModelsLoading(true);
+
+    fetch(`/api/products/submodels?brandId=${selectedBrandId}`, { signal: controller.signal })
+      .then(async (response) => {
+        const json = (await response.json()) as SubModelListResponse & { error?: string };
+
+        if (!response.ok) {
+          throw new Error(json.error ?? "Failed to load submodels");
+        }
+
+        setSubModels(Array.isArray(json.subModels) ? json.subModels : []);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setSubModels([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setSubModelsLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
   }, [selectedBrandId]);
 
   // Fetch products
-  const fetchProducts = useCallback(async () => {
+  useEffect(() => {
     if (!selectedBrandId) {
       setProducts([]);
       setTotalCount(0);
       setProductsLoading(false);
-      return;
+      return undefined;
     }
 
+    const controller = new AbortController();
     setProductsLoading(true);
+
     const params = new URLSearchParams({
       page: String(page),
       pageSize: String(PAGE_SIZE),
       brandId: selectedBrandId,
     });
-    try {
-      const res = await fetch(`/api/products?${params}`);
-      const json = (await res.json()) as PaginatedResponse<ProductWithSource> & {
-        error?: string;
-      };
 
-      if (!res.ok) {
-        throw new Error(json.error ?? "Failed to load products");
-      }
-
-      setProducts(Array.isArray(json.data) ? json.data : []);
-      setTotalCount(typeof json.count === "number" ? json.count : 0);
-    } catch {
-      setProducts([]);
-      setTotalCount(0);
-    } finally {
-      setProductsLoading(false);
+    if (selectedSubModel) {
+      params.set("subModel", selectedSubModel);
     }
-  }, [page, selectedBrandId]);
 
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    fetch(`/api/products?${params}`, { signal: controller.signal })
+      .then(async (res) => {
+        const json = (await res.json()) as PaginatedResponse<ProductWithSource> & {
+          error?: string;
+        };
+
+        if (!res.ok) {
+          throw new Error(json.error ?? "Failed to load products");
+        }
+
+        if (page === 1) {
+          console.log("[CatalogClient] Brand selection results", {
+            brandId: selectedBrandId,
+            brandName: selectedBrand?.name ?? null,
+            subModel: selectedSubModel || null,
+            totalCount: typeof json.count === "number" ? json.count : 0,
+            products: Array.isArray(json.data) ? json.data : [],
+          });
+        }
+
+        setProducts(Array.isArray(json.data) ? json.data : []);
+        setTotalCount(typeof json.count === "number" ? json.count : 0);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setProducts([]);
+        setTotalCount(0);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setProductsLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [page, selectedBrand, selectedBrandId, selectedSubModel]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -120,11 +195,25 @@ export default function CatalogPage() {
   function openBrand(brandId: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("brand", brandId);
+    params.delete("subModel");
     router.push(`${pathname}?${params.toString()}`);
   }
 
   function clearBrand() {
     router.push(pathname);
+  }
+
+  function updateSubModelFilter(nextSubModel: string) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextSubModel) {
+      params.set("subModel", nextSubModel);
+    } else {
+      params.delete("subModel");
+    }
+
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
   }
 
   return (
@@ -217,30 +306,9 @@ export default function CatalogPage() {
               </div>
             )}
           </>
-        ) : productsLoading ? (
-          <div className="flex items-center justify-center py-32">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-500 dark:text-gray-400" />
-          </div>
-        ) : products.length === 0 ? (
-          <>
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <Button variant="ghost" size="sm" className="-ml-2 text-gray-600" onClick={clearBrand}>
-                  <ArrowLeft className="h-4 w-4" />
-                  All brands
-                </Button>
-                <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-                  {selectedBrand?.name ?? "Selected Brand"}
-                </h1>
-              </div>
-            </div>
-            <div className="flex items-center justify-center py-32 text-gray-500 dark:text-gray-400">
-              No products found for this brand.
-            </div>
-          </>
         ) : (
           <>
-            <div className="mb-6 flex items-center justify-between gap-4">
+            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <Button variant="ghost" size="sm" className="-ml-2 text-gray-600" onClick={clearBrand}>
                   <ArrowLeft className="h-4 w-4" />
@@ -253,55 +321,96 @@ export default function CatalogPage() {
                   {totalCount} related products
                 </p>
               </div>
+
+              <div className="w-full lg:max-w-sm">
+                <label
+                  htmlFor="catalog-submodel-filter"
+                  className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Filter by submodel
+                </label>
+                <div className="relative">
+                  <select
+                    id="catalog-submodel-filter"
+                    value={selectedSubModel}
+                    onChange={(event) => updateSubModelFilter(event.target.value)}
+                    disabled={subModelsLoading}
+                    className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 pr-11 text-sm text-gray-900 shadow-sm transition-colors focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                  >
+                    <option value="">All submodels</option>
+                    {subModels.map((subModel) => (
+                      <option key={subModel} value={subModel}>
+                        {subModel}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+                </div>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {subModelsLoading
+                    ? "Loading submodels..."
+                    : `${subModels.length} submodels available`}
+                </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {products.map((product) => {
-                const imageUrl = getProductImage(product);
-                return (
-                  <div key={product.id} className="group cursor-pointer rounded-xl overflow-hidden bg-white border border-gray-200 transition-all duration-200 hover:ring-2 hover:ring-cyan-400/60 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)]">
-                    <div className="relative aspect-[10/7]">
-                      {imageUrl ? (
-                        <Image
-                          src={imageUrl}
-                          alt={`${product.primary_brand?.name ?? ""} ${product.model ?? ""}`}
-                          fill
-                          className="object-contain group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
-                        <Image
-                          src="/van.png"
-                          alt="No image available"
-                          fill
-                          className="object-contain"
-                        />
-                      )}
-                    </div>
-                    <div className="p-3 space-y-0.5 border-t border-gray-200 bg-gray-50">
-                      <div className="flex items-center justify-between gap-2">
-                        {product.primary_brand && (
-                          <p className="text-lg font-semibold text-gray-900">{product.primary_brand.name}</p>
-                        )}
-                        {product.model && (
-                          <p className="text-lg text-gray-600">{product.model}</p>
+            {productsLoading ? (
+              <div className="flex items-center justify-center py-32">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-500 dark:text-gray-400" />
+              </div>
+            ) : products.length === 0 ? (
+              <div className="flex items-center justify-center py-32 text-gray-500 dark:text-gray-400">
+                No products found for this brand.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                {products.map((product) => {
+                  const imageUrl = getProductImage(product);
+                  return (
+                    <div key={product.id} className="group cursor-pointer overflow-hidden rounded-xl border border-gray-200 bg-white transition-all duration-200 hover:ring-2 hover:ring-cyan-400/60 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)]">
+                      <div className="relative aspect-[10/7]">
+                        {imageUrl ? (
+                          <Image
+                            src={imageUrl}
+                            alt={`${product.primary_brand?.name ?? ""} ${product.model ?? ""}`}
+                            fill
+                            className="object-contain group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <Image
+                            src="/van.png"
+                            alt="No image available"
+                            fill
+                            className="object-contain"
+                          />
                         )}
                       </div>
-                      <p className="text-base text-gray-500 truncate">
-                        {product.product_codes?.product_code_data?.generated ?? "—"}
-                      </p>
-                      <p className="text-base text-gray-400 truncate">
-                        {product.product_codes?.description_data?.generated ?? "—"}
-                      </p>
-                      {product.additional_brands.length > 0 && (
-                        <p className="text-sm text-gray-400 truncate">
-                          Also matched to: {product.additional_brands.map((brand) => brand.name).join(", ")}
+                      <div className="space-y-0.5 border-t border-gray-200 bg-gray-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          {product.primary_brand && (
+                            <p className="text-lg font-semibold text-gray-900">{product.primary_brand.name}</p>
+                          )}
+                          {product.model && (
+                            <p className="text-lg text-gray-600">{product.model}</p>
+                          )}
+                        </div>
+                        <p className="truncate text-base text-gray-500">
+                          {product.product_codes?.product_code_data?.generated ?? "—"}
                         </p>
-                      )}
+                        <p className="truncate text-base text-gray-400">
+                          {product.product_codes?.description_data?.generated ?? "—"}
+                        </p>
+                        {product.additional_brands.length > 0 && (
+                          <p className="truncate text-sm text-gray-400">
+                            Also matched to: {product.additional_brands.map((brand) => brand.name).join(", ")}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
 

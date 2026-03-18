@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import {
+  getProductSubModels,
   PRODUCT_WITH_SOURCE_BRAND_FILTER_SELECT,
   mapProductRow,
   PRODUCT_WITH_SOURCE_SELECT,
@@ -26,10 +27,12 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get("search") ?? "";
   const primaryBrandId = searchParams.get("primaryBrandId") ?? "";
   const brandId = searchParams.get("brandId") ?? "";
+  const subModel = searchParams.get("subModel") ?? "";
   const status = searchParams.get("status") ?? "";
 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
+  const hasDerivedSubModelFilter = Boolean(subModel && subModel !== "all");
 
   let query = supabase
     .from("products")
@@ -39,8 +42,7 @@ export async function GET(req: NextRequest) {
         : PRODUCT_WITH_SOURCE_SELECT,
       { count: "exact" }
     )
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    .order("created_at", { ascending: false });
 
   if (primaryBrandId && primaryBrandId !== "all") {
     query = query.eq("primary_brand_id", primaryBrandId);
@@ -58,6 +60,10 @@ export async function GET(req: NextRequest) {
     query = query.or(`model.ilike.%${search}%,subModel.ilike.%${search}%`);
   }
 
+  if (!hasDerivedSubModelFilter) {
+    query = query.range(from, to);
+  }
+
   const { data, error, count } = await query;
 
   if (error) {
@@ -68,6 +74,7 @@ export async function GET(req: NextRequest) {
       message: error.message,
       primaryBrandId,
       brandId,
+      subModel,
       status,
       search,
     });
@@ -83,8 +90,26 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const mappedProducts = (data ?? []).map((row) => mapProductRow(row));
+
+  if (hasDerivedSubModelFilter) {
+    const normalizedSubModel = subModel.trim().toLowerCase();
+    const filteredProducts = mappedProducts.filter((product) =>
+      getProductSubModels(product).some(
+        (candidate) => candidate.toLowerCase() === normalizedSubModel
+      )
+    );
+
+    return NextResponse.json({
+      data: filteredProducts.slice(from, to + 1),
+      count: filteredProducts.length,
+      page,
+      pageSize,
+    });
+  }
+
   return NextResponse.json({
-    data: (data ?? []).map((row) => mapProductRow(row)),
+    data: mappedProducts,
     count: count ?? 0,
     page,
     pageSize,
