@@ -23,6 +23,7 @@ import type {
   BrandListResponse,
   ProductWithSource,
   PaginatedResponse,
+  SubModelListResponse,
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -128,10 +129,25 @@ export default function ProductsPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [primaryBrandFilter, setPrimaryBrandFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [subModels, setSubModels] = useState<string[]>([]);
+  const [subModelsLoading, setSubModelsLoading] = useState(false);
+  const [subModelFilter, setSubModelFilter] = useState("all");
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 20,
   });
+
+  const handlePrimaryBrandFilterChange = (value: string) => {
+    setPrimaryBrandFilter(value);
+    setSubModelFilter("all");
+    setSubModels([]);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -142,6 +158,7 @@ export default function ProductsPage() {
       });
       if (primaryBrandFilter !== "all") params.set("primaryBrandId", primaryBrandFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (subModelFilter !== "all") params.set("subModel", subModelFilter);
 
       const res = await fetch(`/api/products?${params}`);
       const json: PaginatedResponse<ProductWithSource> = await res.json();
@@ -157,7 +174,7 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.pageIndex, pagination.pageSize, primaryBrandFilter, statusFilter]);
+  }, [pagination.pageIndex, pagination.pageSize, primaryBrandFilter, statusFilter, subModelFilter]);
 
   useEffect(() => {
     fetchProducts();
@@ -174,10 +191,33 @@ export default function ProductsPage() {
       });
   }, []);
 
-  // Reset to page 0 when filters change
+  useEffect(() => {
+    if (primaryBrandFilter === "all") return;
+
+    const controller = new AbortController();
+    queueMicrotask(() => setSubModelsLoading(true));
+
+    fetch(`/api/products/submodels?primaryBrandId=${primaryBrandFilter}`, { signal: controller.signal })
+      .then(async (res) => {
+        const json = (await res.json()) as SubModelListResponse & { error?: string };
+        if (!res.ok) throw new Error(json.error ?? "Failed to load submodels");
+        setSubModels(Array.isArray(json.subModels) ? json.subModels : []);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setSubModels([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSubModelsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [primaryBrandFilter]);
+
+  // Reset to page 0 when filters change (subModel handled by handler)
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-  }, [primaryBrandFilter, statusFilter]);
+  }, [subModelFilter]);
 
   const table = useReactTable({
     data,
@@ -203,7 +243,7 @@ export default function ProductsPage() {
       <div className="card p-4 sm:p-6 md:p-8">
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <Select value={primaryBrandFilter} onValueChange={setPrimaryBrandFilter}>
+          <Select value={primaryBrandFilter} onValueChange={handlePrimaryBrandFilterChange}>
             <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="Primary brand" />
             </SelectTrigger>
@@ -216,7 +256,7 @@ export default function ProductsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
             <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -225,6 +265,26 @@ export default function ProductsPage() {
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="published">Published</SelectItem>
               <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={subModelFilter}
+            onValueChange={(value) => {
+              setSubModelFilter(value);
+              setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+            }}
+            disabled={primaryBrandFilter === "all" || subModelsLoading || subModels.length === 0}
+          >
+            <SelectTrigger className="w-full sm:w-[220px]">
+              <SelectValue placeholder={primaryBrandFilter === "all" ? "Select brand first" : "SubModel"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All submodels</SelectItem>
+              {subModels.map((subModel) => (
+                <SelectItem key={subModel} value={subModel}>
+                  {subModel}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

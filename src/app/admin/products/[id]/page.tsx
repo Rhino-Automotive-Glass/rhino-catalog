@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SingleImageUpload, MultiImageUpload } from "@/components/image-upload";
+import { MultiImageUpload } from "@/components/image-upload";
 
 /** Roles that can edit all product fields */
 function canEditProducts(role: RoleName): boolean {
@@ -78,15 +78,7 @@ export default function EditProductPage({
       const data: ProductWithSource = await res.json();
       setProduct(data);
 
-      // Normalize images — merge with emptyImages to ensure structure
-      const images = {
-        main: { ...emptyImages.main, ...(data.images?.main ?? {}) },
-        details: {
-          left: data.images?.details?.left ?? [],
-          right: data.images?.details?.right ?? [],
-          back: data.images?.details?.back ?? [],
-        },
-      };
+      const images = Array.isArray(data.images) ? data.images.slice(0, 3) : [];
 
       form.reset({
         price: Number(data.price),
@@ -379,52 +371,13 @@ export default function EditProductPage({
         <fieldset disabled={isViewOnly} className={isViewOnly ? "opacity-60" : undefined}>
           <div className="card p-4 sm:p-6 md:p-8 mb-6">
             <h2 className="text-lg font-semibold text-foreground mb-3">Images</h2>
-
-            {/* Main images */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Main Images
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                {(["left", "right", "back"] as const).map((side) => (
-                  <SingleImageUpload
-                    key={side}
-                    label={`Main ${side}`}
-                    value={images.main[side]}
-                    folder={`${imageFolder}/main`}
-                    onChange={(url) => {
-                      const updated = { ...images };
-                      updated.main = { ...updated.main, [side]: url };
-                      if (!url) delete updated.main[side];
-                      form.setValue("images", updated, { shouldDirty: true });
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Detail images */}
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Detail Images
-              </h3>
-              <div className="grid grid-cols-1 gap-6">
-                {(["left", "right", "back"] as const).map((side) => (
-                  <MultiImageUpload
-                    key={side}
-                    label={`Detail ${side}`}
-                    value={images.details[side]}
-                    max={3}
-                    folder={`${imageFolder}/details/${side}`}
-                    onChange={(urls) => {
-                      const updated = { ...images };
-                      updated.details = { ...updated.details, [side]: urls };
-                      form.setValue("images", updated, { shouldDirty: true });
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+            <MultiImageUpload
+              label="Product images"
+              value={images}
+              max={3}
+              folder={`${imageFolder}/images`}
+              onChange={(urls) => form.setValue("images", urls.slice(0, 3), { shouldDirty: true })}
+            />
           </div>
         </fieldset>
 

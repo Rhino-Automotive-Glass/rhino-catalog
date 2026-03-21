@@ -1,16 +1,5 @@
 /** Structured images stored in the products.images jsonb column */
-export type ProductImages = {
-  main: {
-    left?: string;
-    right?: string;
-    back?: string;
-  };
-  details: {
-    left: string[];
-    right: string[];
-    back: string[];
-  };
-};
+export type ProductImages = string[];
 
 export type ProductStatus = "draft" | "published" | "archived";
 

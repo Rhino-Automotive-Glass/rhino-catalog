@@ -62,7 +62,6 @@ export default function CatalogPage() {
 
   // Fetch catalog brands
   useEffect(() => {
-    setBrandsLoading(true);
     fetch("/api/brands?scope=catalog")
       .then(async (r) => {
         const json = (await r.json()) as BrandListResponse & { error?: string };
@@ -73,20 +72,11 @@ export default function CatalogPage() {
       .finally(() => setBrandsLoading(false));
   }, []);
 
-  // Reset page when brand changes
   useEffect(() => {
-    setPage(1);
-  }, [selectedBrandId, selectedSubModel]);
-
-  useEffect(() => {
-    if (!selectedBrandId) {
-      setSubModels([]);
-      setSubModelsLoading(false);
-      return undefined;
-    }
+    if (!selectedBrandId) return undefined;
 
     const controller = new AbortController();
-    setSubModelsLoading(true);
+    queueMicrotask(() => setSubModelsLoading(true));
 
     fetch(`/api/products/submodels?brandId=${selectedBrandId}`, { signal: controller.signal })
       .then(async (response) => {
@@ -118,15 +108,10 @@ export default function CatalogPage() {
 
   // Fetch products
   useEffect(() => {
-    if (!selectedBrandId) {
-      setProducts([]);
-      setTotalCount(0);
-      setProductsLoading(false);
-      return undefined;
-    }
+    if (!selectedBrandId) return undefined;
 
     const controller = new AbortController();
-    setProductsLoading(true);
+    queueMicrotask(() => setProductsLoading(true));
 
     const params = new URLSearchParams({
       page: String(page),
@@ -151,7 +136,6 @@ export default function CatalogPage() {
         if (page === 1) {
           console.log("[CatalogClient] Brand selection results", {
             brandId: selectedBrandId,
-            brandName: selectedBrand?.name ?? null,
             subModel: selectedSubModel || null,
             totalCount: typeof json.count === "number" ? json.count : 0,
             products: Array.isArray(json.data) ? json.data : [],
@@ -178,14 +162,12 @@ export default function CatalogPage() {
     return () => {
       controller.abort();
     };
-  }, [page, selectedBrand, selectedBrandId, selectedSubModel]);
+  }, [page, selectedBrandId, selectedSubModel]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   function getProductImage(product: ProductWithSource): string | null {
-    const main = product.images?.main;
-    if (!main) return null;
-    return main.left || main.right || main.back || null;
+    return product.images?.[0] ?? null;
   }
 
   function getBrandLogo(brandName: string): string | null {
@@ -193,6 +175,13 @@ export default function CatalogPage() {
   }
 
   function openBrand(brandId: string) {
+    setPage(1);
+    setProducts([]);
+    setTotalCount(0);
+    setProductsLoading(true);
+    setSubModels([]);
+    setSubModelsLoading(true);
+
     const params = new URLSearchParams(searchParams.toString());
     params.set("brand", brandId);
     params.delete("subModel");
@@ -200,10 +189,21 @@ export default function CatalogPage() {
   }
 
   function clearBrand() {
+    setPage(1);
+    setProducts([]);
+    setTotalCount(0);
+    setProductsLoading(false);
+    setSubModels([]);
+    setSubModelsLoading(false);
     router.push(pathname);
   }
 
   function updateSubModelFilter(nextSubModel: string) {
+    setPage(1);
+    setProducts([]);
+    setTotalCount(0);
+    setProductsLoading(true);
+
     const params = new URLSearchParams(searchParams.toString());
 
     if (nextSubModel) {
