@@ -12,9 +12,11 @@ import {
   ChevronRight,
   Loader2,
   Settings,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  DialogClose,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -457,11 +459,24 @@ export default function CatalogPage() {
           }
         }}
       >
-        <DialogContent className="max-w-6xl overflow-hidden border-gray-200 p-0">
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-6xl overflow-hidden border-gray-200 p-0"
+        >
           {previewProduct && (
             <>
-              <DialogHeader className="border-b border-gray-200 bg-white px-6 py-4 text-left">
-                <DialogTitle className="truncate text-xl text-gray-900">
+              <DialogClose asChild>
+                <button
+                  type="button"
+                  className="absolute top-4 right-4 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-900/80 text-white shadow-sm transition-colors hover:bg-gray-900"
+                  aria-label="Close image preview"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </DialogClose>
+
+              <DialogHeader className="border-b border-gray-200 bg-white px-6 py-4 pr-16 text-left">
+                <DialogTitle className="line-clamp-2 text-xl leading-tight text-gray-900">
                 {previewProduct.product_codes?.description_data?.generated ?? "No description available"}
                 </DialogTitle>
                 <DialogDescription className="truncate text-sm text-gray-500">
