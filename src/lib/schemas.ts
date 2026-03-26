@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-/** Zod schema matching the flattened ProductImages shape (up to 3 URLs) */
-export const productImagesSchema = z.array(z.string().url()).max(3);
+/** Zod schema matching the flattened ProductImages shape (single URL max) */
+export const productImagesSchema = z.array(z.string().url()).max(1);
 
 /** Schema for editing a product via the form (catalog-owned fields only) */
 export const productFormSchema = z.object({

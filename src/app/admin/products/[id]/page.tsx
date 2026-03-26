@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MultiImageUpload } from "@/components/image-upload";
+import { SingleImageUpload } from "@/components/image-upload";
 
 /** Roles that can edit all product fields */
 function canEditProducts(role: RoleName): boolean {
@@ -78,7 +78,7 @@ export default function EditProductPage({
       const data: ProductWithSource = await res.json();
       setProduct(data);
 
-      const images = Array.isArray(data.images) ? data.images.slice(0, 3) : [];
+      const images = Array.isArray(data.images) ? data.images.slice(0, 1) : [];
 
       form.reset({
         price: Number(data.price),
@@ -371,12 +371,15 @@ export default function EditProductPage({
         <fieldset disabled={isViewOnly} className={isViewOnly ? "opacity-60" : undefined}>
           <div className="card p-4 sm:p-6 md:p-8 mb-6">
             <h2 className="text-lg font-semibold text-foreground mb-3">Images</h2>
-            <MultiImageUpload
-              label="Product images"
-              value={images}
-              max={3}
+            <SingleImageUpload
+              label="Product image"
+              value={images[0]}
               folder={`${imageFolder}/images`}
-              onChange={(urls) => form.setValue("images", urls.slice(0, 3), { shouldDirty: true })}
+              onChange={(url) =>
+                form.setValue("images", url ? [url] : [], {
+                  shouldDirty: true,
+                })
+              }
             />
           </div>
         </fieldset>
