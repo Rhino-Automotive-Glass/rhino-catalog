@@ -62,6 +62,25 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
   const { id } = await ctx.params;
   const body = await req.json();
+  const { data: product, error: productError } = await fetchProductByIdentifier(id);
+
+  if (productError) {
+    const status = productError.code === "PGRST116" ? 404 : 500;
+    return NextResponse.json({ error: productError.message }, { status });
+  }
+
+  if (!product) {
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
+  }
+
+  if (product.is_hidden) {
+    return NextResponse.json(
+      {
+        error: product.hidden_reason ?? "Hidden products are read-only in this app",
+      },
+      { status: 403 }
+    );
+  }
 
   // Editors: can only update images
   if (!canEditProducts(userRole.role)) {

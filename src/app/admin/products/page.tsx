@@ -47,6 +47,7 @@ const statusColors: Record<string, string> = {
   draft: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
   published: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
   archived: "bg-gray-100 text-gray-800 dark:bg-gray-700/40 dark:text-gray-300",
+  hidden: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
 
 const columns: ColumnDef<ProductWithSource>[] = [
@@ -108,10 +109,10 @@ const columns: ColumnDef<ProductWithSource>[] = [
     cell: ({ getValue }) => getValue<number>(),
   },
   {
-    accessorKey: "status",
+    id: "status",
     header: "Status",
-    cell: ({ getValue }) => {
-      const status = getValue<string>();
+    cell: ({ row }) => {
+      const status = row.original.effective_status;
       return (
         <Badge variant="secondary" className={statusColors[status]}>
           {status}
@@ -155,6 +156,7 @@ export default function ProductsPage() {
       const params = new URLSearchParams({
         page: String(pagination.pageIndex + 1),
         pageSize: String(pagination.pageSize),
+        visibility: "all",
       });
       if (primaryBrandFilter !== "all") params.set("primaryBrandId", primaryBrandFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
@@ -265,6 +267,7 @@ export default function ProductsPage() {
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="published">Published</SelectItem>
               <SelectItem value="archived">Archived</SelectItem>
+              <SelectItem value="hidden">Hidden</SelectItem>
             </SelectContent>
           </Select>
           <Select

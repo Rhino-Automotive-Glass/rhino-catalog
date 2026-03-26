@@ -2,6 +2,7 @@
 export type ProductImages = string[];
 
 export type ProductStatus = "draft" | "published" | "archived";
+export type ProductVisibilityStatus = ProductStatus | "hidden";
 
 export type Brand = {
   id: string;
@@ -58,6 +59,9 @@ export type Product = {
   subModel: string | null;
   images: ProductImages;
   status: ProductStatus;
+  effective_status: ProductVisibilityStatus;
+  is_hidden: boolean;
+  hidden_reason: string | null;
   created_at: string;
   updated_at: string;
 };

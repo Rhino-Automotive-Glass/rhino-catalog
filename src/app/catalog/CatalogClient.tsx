@@ -117,6 +117,7 @@ export default function CatalogPage() {
       page: String(page),
       pageSize: String(PAGE_SIZE),
       brandId: selectedBrandId,
+      visibility: "visible",
     });
 
     if (selectedSubModel) {
@@ -131,15 +132,6 @@ export default function CatalogPage() {
 
         if (!res.ok) {
           throw new Error(json.error ?? "Failed to load products");
-        }
-
-        if (page === 1) {
-          console.log("[CatalogClient] Brand selection results", {
-            brandId: selectedBrandId,
-            subModel: selectedSubModel || null,
-            totalCount: typeof json.count === "number" ? json.count : 0,
-            products: Array.isArray(json.data) ? json.data : [],
-          });
         }
 
         setProducts(Array.isArray(json.data) ? json.data : []);

@@ -55,7 +55,9 @@ export async function GET(req: NextRequest) {
   const subModels = Array.from(
     new Set(
       (data ?? [])
-        .flatMap((row) => getProductSubModels(mapProductRow(row)))
+        .map((row) => mapProductRow(row))
+        .filter((product) => (brandId && brandId !== "all" ? !product.is_hidden : true))
+        .flatMap((product) => getProductSubModels(product))
         .sort((a, b) => a.localeCompare(b))
     )
   );

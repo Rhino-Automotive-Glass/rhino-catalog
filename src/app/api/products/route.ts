@@ -6,6 +6,7 @@ import {
   mapProductRow,
   PRODUCT_WITH_SOURCE_SELECT,
 } from "@/lib/product-query";
+import { matchesVisibilityStatus } from "@/lib/product-visibility";
 
 /**
  * GET /api/products
@@ -16,7 +17,8 @@ import {
  *   pageSize       – rows per page (default 20)
  *   primaryBrandId – exact match on products.primary_brand_id
  *   brandId        – match any brand membership via product_brands
- *   status         – exact match on products.status column
+ *   status         – derived display status (draft / published / archived / hidden)
+ *   visibility     – visible (default) or all; catalog uses visible, admin uses all
  *   search         – loose match on model / subModel
  */
 export async function GET(req: NextRequest) {
@@ -29,10 +31,17 @@ export async function GET(req: NextRequest) {
   const brandId = searchParams.get("brandId") ?? "";
   const subModel = searchParams.get("subModel") ?? "";
   const status = searchParams.get("status") ?? "";
+  const visibility = searchParams.get("visibility") ?? "visible";
+  const normalizedVisibility = visibility === "all" ? "all" : "visible";
 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const hasDerivedSubModelFilter = Boolean(subModel && subModel !== "all");
+  const shouldUseRawStatusFilter = Boolean(status && status !== "all" && status !== "hidden");
+  const requiresDerivedFiltering =
+    hasDerivedSubModelFilter ||
+    normalizedVisibility !== "all" ||
+    Boolean(status && status !== "all");
 
   let query = supabase
     .from("products")
@@ -52,7 +61,7 @@ export async function GET(req: NextRequest) {
     query = query.eq("product_brands.brand_id", brandId);
   }
 
-  if (status && status !== "all") {
+  if (shouldUseRawStatusFilter) {
     query = query.eq("status", status);
   }
 
@@ -60,7 +69,7 @@ export async function GET(req: NextRequest) {
     query = query.or(`model.ilike.%${search}%,subModel.ilike.%${search}%`);
   }
 
-  if (!hasDerivedSubModelFilter) {
+  if (!requiresDerivedFiltering) {
     query = query.range(from, to);
   }
 
@@ -76,6 +85,7 @@ export async function GET(req: NextRequest) {
       brandId,
       subModel,
       status,
+      visibility: normalizedVisibility,
       search,
     });
 
@@ -91,15 +101,28 @@ export async function GET(req: NextRequest) {
   }
 
   const mappedProducts = (data ?? []).map((row) => mapProductRow(row));
+  let filteredProducts = mappedProducts;
+
+  if (normalizedVisibility === "visible") {
+    filteredProducts = filteredProducts.filter((product) => !product.is_hidden);
+  }
+
+  if (status && status !== "all") {
+    filteredProducts = filteredProducts.filter((product) =>
+      matchesVisibilityStatus(product.effective_status, status)
+    );
+  }
 
   if (hasDerivedSubModelFilter) {
     const normalizedSubModel = subModel.trim().toLowerCase();
-    const filteredProducts = mappedProducts.filter((product) =>
+    filteredProducts = filteredProducts.filter((product) =>
       getProductSubModels(product).some(
         (candidate) => candidate.toLowerCase() === normalizedSubModel
       )
     );
+  }
 
+  if (requiresDerivedFiltering) {
     return NextResponse.json({
       data: filteredProducts.slice(from, to + 1),
       count: filteredProducts.length,
@@ -109,7 +132,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    data: mappedProducts,
+    data: filteredProducts,
     count: count ?? 0,
     page,
     pageSize,

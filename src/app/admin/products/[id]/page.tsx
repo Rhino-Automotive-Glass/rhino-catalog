@@ -34,6 +34,13 @@ function canEditImages(role: RoleName): boolean {
   return role === "super_admin" || role === "admin" || role === "editor";
 }
 
+const statusColors: Record<string, string> = {
+  draft: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+  published: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+  archived: "bg-gray-100 text-gray-800 dark:bg-gray-700/40 dark:text-gray-300",
+  hidden: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
+};
+
 export default function EditProductPage({
   params,
 }: {
@@ -170,9 +177,12 @@ export default function EditProductPage({
     );
   }
 
-  const isAdmin = canEditProducts(role);
-  const isEditor = canEditImages(role) && !isAdmin;
-  const isViewOnly = !canEditImages(role);
+  const isHidden = product.is_hidden;
+  const effectiveStatus = product.effective_status;
+  const canEditCatalogFields = canEditProducts(role) && !isHidden;
+  const canEditProductImages = canEditImages(role) && !isHidden;
+  const isEditor = canEditImages(role) && !canEditProducts(role) && !isHidden;
+  const isViewOnly = !canEditProductImages;
   const images = form.watch("images");
   const compatibilityItems = product.product_codes?.compatibility_data?.items ?? [];
   const sourceUpdatedAt = product.product_codes?.updated_at
@@ -198,7 +208,9 @@ export default function EditProductPage({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl sm:text-2xl font-semibold text-foreground break-all">{sourceCode}</h1>
-            <Badge variant="secondary">{product.status}</Badge>
+            <Badge variant="secondary" className={statusColors[effectiveStatus]}>
+              {effectiveStatus}
+            </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{sourceDescription}</p>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -207,14 +219,25 @@ export default function EditProductPage({
         </div>
       </div>
 
+      {/* Hidden notice */}
+      {isHidden && (
+        <div className="flex items-center gap-2 mb-6 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/40 px-3 sm:px-4 py-3 text-sm text-red-800 dark:text-red-200">
+          <ShieldAlert className="h-4 w-4 shrink-0" />
+          <span>
+            This product is hidden automatically from the catalog.
+            {product.hidden_reason ? ` ${product.hidden_reason}` : ""} It cannot be edited in this app.
+          </span>
+        </div>
+      )}
+
       {/* Role notice */}
-      {isEditor && (
+      {!isHidden && isEditor && (
         <div className="flex items-center gap-2 mb-6 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/50 px-3 sm:px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
           <ShieldAlert className="h-4 w-4 shrink-0" />
           <span>You have <strong>editor</strong> access. You can only update product images.</span>
         </div>
       )}
-      {isViewOnly && (
+      {!isHidden && isViewOnly && (
         <div className="flex items-center gap-2 mb-6 rounded-lg border border-border bg-muted px-3 sm:px-4 py-3 text-sm text-muted-foreground">
           <ShieldAlert className="h-4 w-4 shrink-0" />
           <span>You have <strong>view-only</strong> access. You cannot make changes to this product.</span>
@@ -257,11 +280,19 @@ export default function EditProductPage({
               <Label className="mb-1">Last Synced from Rhino Code</Label>
               <Input value={sourceUpdatedAt} readOnly className="bg-muted" />
             </div>
+            <div>
+              <Label className="mb-1">Visibility Rule</Label>
+              <Input
+                value={product.hidden_reason ?? "Visible in catalog"}
+                readOnly
+                className="bg-muted"
+              />
+            </div>
           </div>
         </div>
 
         {/* Pricing & Stock */}
-        <fieldset disabled={!isAdmin} className={!isAdmin ? "opacity-60" : undefined}>
+        <fieldset disabled={!canEditCatalogFields} className={!canEditCatalogFields ? "opacity-60" : undefined}>
           <div className="card p-4 sm:p-6 md:p-8 mb-6">
             <h2 className="text-lg font-semibold text-foreground mb-3">Pricing & Stock</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -296,24 +327,28 @@ export default function EditProductPage({
               </div>
               <div>
                 <Label htmlFor="status" className="mb-1">Status</Label>
-                <Select
-                  value={form.watch("status")}
-                  onValueChange={(v) =>
-                    form.setValue("status", v as ProductFormValues["status"], {
-                      shouldDirty: true,
-                    })
-                  }
-                  disabled={!isAdmin}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="published">Published</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
-                  </SelectContent>
-                </Select>
+                {isHidden ? (
+                  <Input value="hidden" readOnly className="bg-muted" />
+                ) : (
+                  <Select
+                    value={form.watch("status")}
+                    onValueChange={(v) =>
+                      form.setValue("status", v as ProductFormValues["status"], {
+                        shouldDirty: true,
+                      })
+                    }
+                    disabled={!canEditCatalogFields}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="published">Published</SelectItem>
+                      <SelectItem value="archived">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
           </div>
@@ -398,7 +433,7 @@ export default function EditProductPage({
               ) : (
                 <Save className="mr-2 h-4 w-4" />
               )}
-              {isAdmin ? "Save Changes" : "Save Images"}
+              {canEditCatalogFields ? "Save Changes" : "Save Images"}
             </Button>
           </div>
         ) : (

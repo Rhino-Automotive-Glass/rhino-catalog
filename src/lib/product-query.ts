@@ -1,4 +1,9 @@
 import type { Brand, ProductCode, ProductWithSource } from "@/lib/types";
+import {
+  getEffectiveProductStatus,
+  getProductHiddenReason,
+  isProductHidden,
+} from "@/lib/product-visibility";
 
 type RawBrand = {
   id: string;
@@ -138,6 +143,7 @@ function dedupeBrands(brands: Brand[]): Brand[] {
 export function mapProductRow(row: RawProductRow): ProductWithSource {
   const primaryBrand = unwrapRelation(row.primary_brand);
   const productCode = unwrapRelation(row.product_codes);
+  const hidden = isProductHidden(productCode);
   const additionalBrands = dedupeBrands(
     (row.product_brands ?? [])
       .map((item) => unwrapRelation(item.brand))
@@ -166,6 +172,9 @@ export function mapProductRow(row: RawProductRow): ProductWithSource {
     subModel: row.subModel,
     images: row.images,
     status: row.status,
+    effective_status: getEffectiveProductStatus(row.status, productCode),
+    is_hidden: hidden,
+    hidden_reason: getProductHiddenReason(productCode),
     created_at: row.created_at,
     updated_at: row.updated_at,
     // PRODUCT_WITH_SOURCE_INNER_SELECT enforces this exists at runtime, but keep TS happy.

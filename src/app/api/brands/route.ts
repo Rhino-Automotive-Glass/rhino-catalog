@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import type { BrandListResponse } from "@/lib/types";
+import { mapProductRow, PRODUCT_WITH_SOURCE_INNER_SELECT } from "@/lib/product-query";
 
 type RawBrand = {
   id: string;
@@ -28,15 +29,9 @@ export async function GET(req: NextRequest) {
 
     while (true) {
       const { data, error } = await supabase
-        .from("product_brands")
-        .select(`
-          product_id,
-          brand:brands!product_brands_brand_id_fkey (
-            id,
-            name
-          )
-        `)
-        .order("product_id", { ascending: true })
+        .from("products")
+        .select(PRODUCT_WITH_SOURCE_INNER_SELECT)
+        .order("created_at", { ascending: false })
         .range(from, from + batchSize - 1);
 
       if (error) {
@@ -59,19 +54,28 @@ export async function GET(req: NextRequest) {
       }
 
       for (const row of data ?? []) {
-        const brand = unwrapRelation(row.brand as RawBrand | RawBrand[] | null);
-        if (!brand) continue;
+        const product = mapProductRow(row);
 
-        const current = brandCounts.get(brand.id);
-        if (current) {
-          current.productCount += 1;
-          continue;
+        if (product.is_hidden) continue;
+
+        const relatedBrands = [
+          ...(product.primary_brand ? [product.primary_brand] : []),
+          ...product.additional_brands,
+        ];
+
+        for (const brand of relatedBrands) {
+          const current = brandCounts.get(brand.id);
+          if (current) {
+            current.productCount += 1;
+            continue;
+          }
+
+          brandCounts.set(brand.id, {
+            id: brand.id,
+            name: brand.name,
+            productCount: 1,
+          });
         }
-
-        brandCounts.set(brand.id, {
-          ...brand,
-          productCount: 1,
-        });
       }
 
       if (!data || data.length < batchSize) break;
