@@ -73,6 +73,23 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
+  if (!Array.isArray(product.images)) {
+    console.error("PATCH /api/products/[id] blocked by legacy images schema", {
+      id,
+      role: userRole.role,
+      imagesType: typeof product.images,
+      imagesValue: product.images,
+    });
+
+    return NextResponse.json(
+      {
+        error:
+          "This database is still using the legacy product images schema. Apply migrations 202603180001_flatten_product_images.sql and 202603250001_limit_product_images_to_1.sql before uploading images.",
+      },
+      { status: 500 }
+    );
+  }
+
   if (product.is_hidden) {
     return NextResponse.json(
       {
@@ -107,6 +124,16 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       .single();
 
     if (error) {
+      console.error("PATCH /api/products/[id] image update failed", {
+        id,
+        role: userRole.role,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        message: error.message,
+        images: imagesParsed.data,
+      });
+
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -136,6 +163,16 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     .eq("id", id);
 
   if (updateError) {
+    console.error("PATCH /api/products/[id] product update failed", {
+      id,
+      role: userRole.role,
+      code: updateError.code,
+      details: updateError.details,
+      hint: updateError.hint,
+      message: updateError.message,
+      payload: parsed.data,
+    });
+
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
