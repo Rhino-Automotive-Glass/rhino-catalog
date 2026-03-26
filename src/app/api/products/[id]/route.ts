@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { createAdminClient } from "@/lib/supabase-admin";
 import { z } from "zod";
 import { productFormSchema, productImagesSchema } from "@/lib/schemas";
 import { getUserRole, canEditProducts, canEditImages } from "@/lib/roles";
@@ -46,7 +47,6 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 /** PATCH /api/products/[id] — update a product (role-gated) */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
-  const supabase = await createClient();
   const userRole = await getUserRole();
 
   if (!userRole) {
@@ -63,6 +63,25 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
   const body = await req.json();
   const { data: product, error: productError } = await fetchProductByIdentifier(id);
+  let adminSupabase;
+
+  try {
+    adminSupabase = createAdminClient();
+  } catch (error) {
+    console.error("PATCH /api/products/[id] admin client setup failed", {
+      id,
+      role: userRole.role,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return NextResponse.json(
+      {
+        error:
+          "Server write client is not configured. Add SUPABASE_SERVICE_ROLE_KEY to this environment.",
+      },
+      { status: 500 }
+    );
+  }
 
   if (productError) {
     const status = productError.code === "PGRST116" ? 404 : 500;
@@ -116,7 +135,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from("products")
       .update({ images: imagesParsed.data })
       .eq("id", id)
@@ -157,7 +176,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       { status: 400 }
     );
   }
-  const { error: updateError } = await supabase
+  const { error: updateError } = await adminSupabase
     .from("products")
     .update(parsed.data)
     .eq("id", id);
