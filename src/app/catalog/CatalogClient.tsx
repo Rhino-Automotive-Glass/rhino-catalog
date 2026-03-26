@@ -14,6 +14,13 @@ import {
   Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "@/components/logout-button";
 import type {
@@ -56,6 +63,7 @@ export default function CatalogPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [subModels, setSubModels] = useState<string[]>([]);
   const [subModelsLoading, setSubModelsLoading] = useState(false);
+  const [previewProduct, setPreviewProduct] = useState<ProductWithSource | null>(null);
   const selectedBrandId = searchParams.get("brand") ?? "";
   const selectedSubModel = searchParams.get("subModel") ?? "";
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
@@ -208,6 +216,8 @@ export default function CatalogPage() {
     router.push(query ? `${pathname}?${query}` : pathname);
   }
 
+
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       {/* Header */}
@@ -359,7 +369,12 @@ export default function CatalogPage() {
                 {products.map((product) => {
                   const imageUrl = getProductImage(product);
                   return (
-                    <div key={product.id} className="group cursor-pointer overflow-hidden rounded-xl border border-gray-200 bg-white transition-all duration-200 hover:ring-2 hover:ring-cyan-400/60 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)]">
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => setPreviewProduct(product)}
+                      className="group overflow-hidden rounded-xl border border-gray-200 bg-white text-left transition-all duration-200 hover:ring-2 hover:ring-cyan-400/60 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)]"
+                    >
                       <div className="relative aspect-[10/7]">
                         {imageUrl ? (
                           <Image
@@ -370,18 +385,18 @@ export default function CatalogPage() {
                           />
                         ) : (
                           <Image
-                            src="/van.png"
+                            src="/rhino-logo.png"
                             alt="No image available"
                             fill
-                            className="object-contain"
+                            className="object-contain p-6 opacity-35 grayscale"
                           />
                         )}
                       </div>
                       <div className="space-y-0.5 border-t border-gray-200 bg-gray-50 p-3">
                         <div className="flex items-center justify-between gap-2">
-                          {product.primary_brand && (
-                            <p className="text-lg font-semibold text-gray-900">{product.primary_brand.name}</p>
-                          )}
+
+                            <p className="text-lg font-semibold text-gray-900">{product.product_codes?.description_data?.generated ?? "—"}</p>
+
                           {product.model && (
                             <p className="text-lg text-gray-600">{product.model}</p>
                           )}
@@ -389,16 +404,16 @@ export default function CatalogPage() {
                         <p className="truncate text-base text-gray-500">
                           {product.product_codes?.product_code_data?.generated ?? "—"}
                         </p>
-                        <p className="truncate text-base text-gray-400">
+                        {/* <p className="truncate text-base text-gray-400">
                           {product.product_codes?.description_data?.generated ?? "—"}
-                        </p>
+                        </p> */}
                         {product.additional_brands.length > 0 && (
                           <p className="truncate text-sm text-gray-400">
                             Also matched to: {product.additional_brands.map((brand) => brand.name).join(", ")}
                           </p>
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -433,6 +448,58 @@ export default function CatalogPage() {
           </div>
         )}
       </main>
+
+      <Dialog
+        open={Boolean(previewProduct)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewProduct(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-6xl overflow-hidden border-gray-200 p-0">
+          {previewProduct && (
+            <>
+              <DialogHeader className="border-b border-gray-200 bg-white px-6 py-4 text-left">
+                <DialogTitle className="truncate text-xl text-gray-900">
+                {previewProduct.product_codes?.description_data?.generated ?? "No description available"}
+                </DialogTitle>
+                <DialogDescription className="truncate text-sm text-gray-500">
+                  {previewProduct.product_codes?.product_code_data?.generated ?? "—"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="bg-gray-100 p-2 sm:p-3">
+                <div className="relative h-[72vh] min-h-[420px] overflow-hidden rounded-lg bg-white">
+                  {getProductImage(previewProduct) ? (
+                    <Image
+                      src={getProductImage(previewProduct)!}
+                      alt={previewProduct.product_codes?.description_data?.generated ?? "No description available"}
+                      fill
+                      className="object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <Image
+                        src="/rhino-logo.png"
+                        alt="No image available"
+                        fill
+                        className="object-contain p-8 opacity-35 grayscale"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 space-y-1 text-sm text-gray-600">
+                  {previewProduct.additional_brands.length > 0 && (
+                    <p className="truncate text-gray-500">
+                      Also matched to: {previewProduct.additional_brands.map((brand) => brand.name).join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Footer */}
       <footer className="border-t border-gray-200 dark:border-gray-700 mt-auto">
