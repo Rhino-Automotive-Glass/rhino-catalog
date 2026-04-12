@@ -208,3 +208,30 @@ export function getProductSubModels(
     )
   );
 }
+
+function normalizeProductSearchValue(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+export function matchesProductSearch(
+  product: Pick<ProductWithSource, "model" | "subModel" | "product_codes">,
+  search: string
+): boolean {
+  const normalizedSearch = normalizeProductSearchValue(search);
+
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  const searchableValues = [
+    product.model,
+    ...getProductSubModels(product),
+    product.product_codes.product_code_data.generated,
+    product.product_codes.description_data.generated,
+    product.product_codes.compatibility_data.generated,
+  ];
+
+  return searchableValues.some((value) =>
+    normalizeProductSearchValue(value).includes(normalizedSearch)
+  );
+}

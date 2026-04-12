@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -11,10 +11,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Search,
   Settings,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DialogClose,
   Dialog,
@@ -68,7 +70,11 @@ export default function CatalogPage() {
   const [previewProduct, setPreviewProduct] = useState<ProductWithSource | null>(null);
   const selectedBrandId = searchParams.get("brand") ?? "";
   const selectedSubModel = searchParams.get("subModel") ?? "";
+  const selectedSearch = searchParams.get("search") ?? "";
+  const [searchInput, setSearchInput] = useState(selectedSearch);
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
+  const hasActiveSearch = selectedSearch.trim().length > 0;
+  const shouldShowProductResults = Boolean(selectedBrandId || hasActiveSearch);
 
   // Fetch catalog brands
   useEffect(() => {
@@ -83,7 +89,11 @@ export default function CatalogPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedBrandId) return undefined;
+    if (!selectedBrandId) {
+      setSubModels([]);
+      setSubModelsLoading(false);
+      return undefined;
+    }
 
     const controller = new AbortController();
     queueMicrotask(() => setSubModelsLoading(true));
@@ -118,7 +128,12 @@ export default function CatalogPage() {
 
   // Fetch products
   useEffect(() => {
-    if (!selectedBrandId) return undefined;
+    if (!shouldShowProductResults) {
+      setProducts([]);
+      setTotalCount(0);
+      setProductsLoading(false);
+      return undefined;
+    }
 
     const controller = new AbortController();
     queueMicrotask(() => setProductsLoading(true));
@@ -126,12 +141,19 @@ export default function CatalogPage() {
     const params = new URLSearchParams({
       page: String(page),
       pageSize: String(PAGE_SIZE),
-      brandId: selectedBrandId,
       visibility: "visible",
     });
 
-    if (selectedSubModel) {
+    if (selectedBrandId) {
+      params.set("brandId", selectedBrandId);
+    }
+
+    if (selectedBrandId && selectedSubModel) {
       params.set("subModel", selectedSubModel);
+    }
+
+    if (selectedSearch) {
+      params.set("search", selectedSearch);
     }
 
     fetch(`/api/products?${params}`, { signal: controller.signal })
@@ -164,7 +186,11 @@ export default function CatalogPage() {
     return () => {
       controller.abort();
     };
-  }, [page, selectedBrandId, selectedSubModel]);
+  }, [page, selectedBrandId, selectedSearch, selectedSubModel, shouldShowProductResults]);
+
+  useEffect(() => {
+    setSearchInput(selectedSearch);
+  }, [selectedSearch]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -197,7 +223,13 @@ export default function CatalogPage() {
     setProductsLoading(false);
     setSubModels([]);
     setSubModelsLoading(false);
-    router.push(pathname);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("brand");
+    params.delete("subModel");
+
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
   }
 
   function updateSubModelFilter(nextSubModel: string) {
@@ -218,7 +250,53 @@ export default function CatalogPage() {
     router.push(query ? `${pathname}?${query}` : pathname);
   }
 
+  const updateSearchFilter = useEffectEvent((nextSearch: string) => {
+    setPage(1);
+    setProducts([]);
+    setTotalCount(0);
+    setProductsLoading(true);
 
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextSearch) {
+      params.set("search", nextSearch);
+    } else {
+      params.delete("search");
+    }
+
+    if (!selectedBrandId) {
+      params.delete("subModel");
+    }
+
+    const query = params.toString();
+
+    startTransition(() => {
+      router.replace(query ? `${pathname}?${query}` : pathname);
+    });
+  });
+
+  useEffect(() => {
+    const normalizedSearchInput = searchInput.trim();
+    const normalizedSelectedSearch = selectedSearch.trim();
+
+    if (normalizedSearchInput === normalizedSelectedSearch) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      updateSearchFilter(normalizedSearchInput);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchInput, selectedSearch]);
+
+  const searchHelperText = hasActiveSearch
+    ? selectedBrandId
+      ? `Showing results for "${selectedSearch}" in ${selectedBrand?.name ?? "this brand"}.`
+      : `Showing results for "${selectedSearch}" across all brands.`
+    : "Use the product code, description, model, or submodel to find a part faster.";
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
@@ -250,15 +328,141 @@ export default function CatalogPage() {
 
       {/* Main content */}
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1">
-        {!selectedBrandId ? (
-          <>
-            <div className="mb-6">
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Browse Brands</h1>
+        {selectedBrandId ? (
+          <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <Button variant="ghost" size="sm" className="-ml-2 text-gray-600" onClick={clearBrand}>
+                <ArrowLeft className="h-4 w-4" />
+                All brands
+              </Button>
+              <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+                {selectedBrand?.name ?? "Browse Brands"}
+              </h1>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Select a brand to see every related product in the catalog.
+                {totalCount} {hasActiveSearch ? "matching products" : "related products"}
               </p>
             </div>
 
+            <div className="w-full xl:max-w-3xl">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+                <div>
+                  <div className="relative">
+                    <label
+                      htmlFor="catalog-product-search"
+                      className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      Search products
+                    </label>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+                      <Input
+                        id="catalog-product-search"
+                        type="text"
+                        value={searchInput}
+                        onChange={(event) => setSearchInput(event.target.value)}
+                        placeholder="Search by code, description, model, or submodel"
+                        className="h-12 border-gray-200 bg-white pl-10 pr-11 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                      />
+                      {searchInput && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchInput("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+                          aria-label="Clear product search"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      {searchHelperText}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="catalog-submodel-filter"
+                    className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Filter by submodel
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="catalog-submodel-filter"
+                      value={selectedSubModel}
+                      onChange={(event) => updateSubModelFilter(event.target.value)}
+                      disabled={subModelsLoading}
+                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 pr-11 text-sm text-gray-900 shadow-sm transition-colors focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    >
+                      <option value="">All submodels</option>
+                      {subModels.map((subModel) => (
+                        <option key={subModel} value={subModel}>
+                          {subModel}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {subModelsLoading
+                      ? "Loading submodels..."
+                      : `${subModels.length} submodels available`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-8">
+            <div className="text-center">
+              <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+                {hasActiveSearch ? "Search Products" : "Browse Brands"}
+              </h1>
+              {/* <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {hasActiveSearch
+                  ? `${totalCount} matching products across all brands`
+                  : "Select a brand to see every related product in the catalog."}
+              </p> */}
+            </div>
+
+            <div className="mx-auto mt-6 w-full max-w-2xl">
+              {/* <label
+                htmlFor="catalog-product-search"
+                className="mb-2 block text-center text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Search products
+              </label> */}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+                <Input
+                  id="catalog-product-search"
+                  type="text"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Search by code, description, model, or submodel"
+                  className="h-12 border-gray-200 bg-white pl-10 pr-11 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                />
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchInput("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+                    aria-label="Clear product search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+                {searchHelperText}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!shouldShowProductResults ? (
+          <>
             {brandsLoading ? (
               <div className="flex items-center justify-center py-32">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-500 dark:text-gray-400" />
@@ -312,59 +516,15 @@ export default function CatalogPage() {
           </>
         ) : (
           <>
-            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <Button variant="ghost" size="sm" className="-ml-2 text-gray-600" onClick={clearBrand}>
-                  <ArrowLeft className="h-4 w-4" />
-                  All brands
-                </Button>
-                <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-                  {selectedBrand?.name ?? "Selected Brand"}
-                </h1>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {totalCount} related products
-                </p>
-              </div>
-
-              <div className="w-full lg:max-w-sm">
-                <label
-                  htmlFor="catalog-submodel-filter"
-                  className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  Filter by submodel
-                </label>
-                <div className="relative">
-                  <select
-                    id="catalog-submodel-filter"
-                    value={selectedSubModel}
-                    onChange={(event) => updateSubModelFilter(event.target.value)}
-                    disabled={subModelsLoading}
-                    className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 pr-11 text-sm text-gray-900 shadow-sm transition-colors focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="">All submodels</option>
-                    {subModels.map((subModel) => (
-                      <option key={subModel} value={subModel}>
-                        {subModel}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
-                </div>
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  {subModelsLoading
-                    ? "Loading submodels..."
-                    : `${subModels.length} submodels available`}
-                </p>
-              </div>
-            </div>
-
             {productsLoading ? (
               <div className="flex items-center justify-center py-32">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-500 dark:text-gray-400" />
               </div>
             ) : products.length === 0 ? (
               <div className="flex items-center justify-center py-32 text-gray-500 dark:text-gray-400">
-                No products found for this brand.
+                {hasActiveSearch
+                  ? `No products found for "${selectedSearch}".`
+                  : "No products found for this brand."}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -395,6 +555,11 @@ export default function CatalogPage() {
                         )}
                       </div>
                       <div className="space-y-0.5 border-t border-gray-200 bg-gray-50 p-3">
+                        {!selectedBrandId && product.primary_brand?.name && (
+                          <p className="truncate text-xs font-medium text-cyan-700 dark:text-cyan-300">
+                            {product.primary_brand.name}
+                          </p>
+                        )}
                         <div className="flex items-center justify-between gap-2">
 
                             <p className="text-lg font-semibold text-gray-900">{product.product_codes?.description_data?.generated ?? "—"}</p>
@@ -424,7 +589,7 @@ export default function CatalogPage() {
         )}
 
         {/* Pagination */}
-        {selectedBrandId && !productsLoading && totalPages > 1 && (
+        {shouldShowProductResults && !productsLoading && totalPages > 1 && (
           <div className="flex items-center justify-center gap-4 mt-8">
             <Button
               variant="outline"

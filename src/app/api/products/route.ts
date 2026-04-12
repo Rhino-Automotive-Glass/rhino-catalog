@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import {
   getProductSubModels,
+  matchesProductSearch,
   PRODUCT_WITH_SOURCE_BRAND_FILTER_SELECT,
   mapProductRow,
   PRODUCT_WITH_SOURCE_SELECT,
@@ -19,7 +20,7 @@ import { matchesVisibilityStatus } from "@/lib/product-visibility";
  *   brandId        – match any brand membership via product_brands
  *   status         – derived display status (draft / published / archived / hidden)
  *   visibility     – visible (default) or all; catalog uses visible, admin uses all
- *   search         – loose match on model / subModel
+ *   search         – loose match on code / description / model / subModel
  */
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -41,7 +42,8 @@ export async function GET(req: NextRequest) {
   const requiresDerivedFiltering =
     hasDerivedSubModelFilter ||
     normalizedVisibility !== "all" ||
-    Boolean(status && status !== "all");
+    Boolean(status && status !== "all") ||
+    Boolean(search);
 
   let query = supabase
     .from("products")
@@ -63,10 +65,6 @@ export async function GET(req: NextRequest) {
 
   if (shouldUseRawStatusFilter) {
     query = query.eq("status", status);
-  }
-
-  if (search) {
-    query = query.or(`model.ilike.%${search}%,subModel.ilike.%${search}%`);
   }
 
   if (!requiresDerivedFiltering) {
@@ -119,6 +117,12 @@ export async function GET(req: NextRequest) {
       getProductSubModels(product).some(
         (candidate) => candidate.toLowerCase() === normalizedSubModel
       )
+    );
+  }
+
+  if (search) {
+    filteredProducts = filteredProducts.filter((product) =>
+      matchesProductSearch(product, search)
     );
   }
 
