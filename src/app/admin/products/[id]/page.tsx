@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { deleteImage } from "@/lib/upload";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,21 @@ const statusColors: Record<string, string> = {
   hidden: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
 
+function getProductFormValues(product: ProductWithSource): ProductFormValues {
+  const images = Array.isArray(product.images) ? product.images.slice(0, 1) : [];
+
+  return {
+    price: Number(product.price),
+    stock: product.stock,
+    primary_brand_id: product.primary_brand_id,
+    additional_brand_ids: product.additional_brands.map((brand) => brand.id),
+    model: product.model,
+    subModel: product.subModel,
+    status: product.status,
+    images,
+  };
+}
+
 export default function EditProductPage({
   params,
 }: {
@@ -53,6 +69,7 @@ export default function EditProductPage({
   const [saving, setSaving] = useState(false);
   const [role, setRole] = useState<RoleName | null>(null);
   const [roleLoading, setRoleLoading] = useState(true);
+  const [pendingImageDeletionUrls, setPendingImageDeletionUrls] = useState<string[]>([]);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
@@ -84,19 +101,8 @@ export default function EditProductPage({
       if (!res.ok) throw new Error("Product not found");
       const data: ProductWithSource = await res.json();
       setProduct(data);
-
-      const images = Array.isArray(data.images) ? data.images.slice(0, 1) : [];
-
-      form.reset({
-        price: Number(data.price),
-        stock: data.stock,
-        primary_brand_id: data.primary_brand_id,
-        additional_brand_ids: data.additional_brands.map((brand) => brand.id),
-        model: data.model,
-        subModel: data.subModel,
-        status: data.status,
-        images,
-      });
+      setPendingImageDeletionUrls([]);
+      form.reset(getProductFormValues(data));
     } catch (err) {
       toast.error("Failed to load product", {
         description: err instanceof Error ? err.message : "Unknown error",
@@ -109,6 +115,12 @@ export default function EditProductPage({
   useEffect(() => {
     fetchProduct();
   }, [fetchProduct]);
+
+  const queueImageDeletion = useCallback((url: string) => {
+    setPendingImageDeletionUrls((current) =>
+      current.includes(url) ? current : [...current, url]
+    );
+  }, []);
 
   const onSubmit = async (values: ProductFormValues) => {
     if (!role) return;
@@ -134,6 +146,30 @@ export default function EditProductPage({
         const err = await res.json();
         throw new Error(err.error ?? "Save failed");
       }
+
+      const savedProduct = (await res.json()) as ProductWithSource;
+      const savedValues = getProductFormValues(savedProduct);
+      const cleanupUrls = pendingImageDeletionUrls.filter(
+        (url) => !savedValues.images.includes(url)
+      );
+
+      await Promise.all(
+        cleanupUrls.map(async (url) => {
+          try {
+            await deleteImage(url);
+          } catch (error) {
+            console.warn("Failed to delete superseded image blob", {
+              message: error instanceof Error ? error.message : "Unknown error",
+              productId: savedProduct.id,
+              url,
+            });
+          }
+        })
+      );
+
+      setPendingImageDeletionUrls([]);
+      setProduct(savedProduct);
+      form.reset(savedValues);
       toast.success("Product saved");
       router.refresh();
     } catch (err) {
@@ -410,6 +446,7 @@ export default function EditProductPage({
               label="Product image"
               value={images[0]}
               folder={`${imageFolder}/images`}
+              onQueueDelete={queueImageDeletion}
               onChange={(url) =>
                 form.setValue("images", url ? [url] : [], {
                   shouldDirty: true,

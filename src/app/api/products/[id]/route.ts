@@ -135,11 +135,11 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const { data, error } = await adminSupabase
+    const { error } = await adminSupabase
       .from("products")
       .update({ images: imagesParsed.data })
       .eq("id", id)
-      .select()
+      .select("id")
       .single();
 
     if (error) {
@@ -154,6 +154,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       });
 
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const { data, error: fetchError } = await fetchProductByIdentifier(id);
+
+    if (fetchError) {
+      const status = fetchError.code === "PGRST116" ? 404 : 500;
+      return NextResponse.json({ error: fetchError.message }, { status });
     }
 
     return NextResponse.json(data);

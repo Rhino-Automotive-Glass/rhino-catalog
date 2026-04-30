@@ -7,12 +7,15 @@ import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
 import { uploadImage, deleteImage } from "@/lib/upload";
+import { getCatalogImageSrc } from "@/lib/catalog-image";
 
 type SingleImageUploadProps = {
   /** Current image URL or undefined */
   value?: string;
   /** Called with new URL after upload, or undefined after delete */
   onChange: (url: string | undefined) => void;
+  /** Called when the old image should be deleted after the product is saved */
+  onQueueDelete?: (url: string) => void;
   /** Folder prefix for blob storage (e.g. "ABC123/left-main") */
   folder: string;
   label: string;
@@ -22,6 +25,7 @@ type SingleImageUploadProps = {
 export function SingleImageUpload({
   value,
   onChange,
+  onQueueDelete,
   folder,
   label,
 }: SingleImageUploadProps) {
@@ -34,13 +38,20 @@ export function SingleImageUpload({
 
       setUploading(true);
       try {
-        // Delete the old image if replacing
-        if (value) {
-          await deleteImage(value).catch(() => {});
-        }
         const url = await uploadImage(file, folder);
+        if (value && value !== url) {
+          if (onQueueDelete) {
+            onQueueDelete(value);
+          } else {
+            await deleteImage(value).catch(() => {});
+          }
+        }
         onChange(url);
-        toast.success(`${label} uploaded`);
+        toast.success(`${label} uploaded`, onQueueDelete
+          ? {
+              description: "Save changes to apply this update.",
+            }
+          : undefined);
       } catch (err) {
         toast.error(`Failed to upload ${label}`, {
           description: err instanceof Error ? err.message : "Unknown error",
@@ -51,21 +62,29 @@ export function SingleImageUpload({
         e.target.value = "";
       }
     },
-    [value, folder, label, onChange]
+    [value, folder, label, onChange, onQueueDelete]
   );
 
   const handleDelete = useCallback(async () => {
     if (!value) return;
     try {
-      await deleteImage(value);
+      if (onQueueDelete) {
+        onQueueDelete(value);
+      } else {
+        await deleteImage(value);
+      }
       onChange(undefined);
-      toast.success(`${label} removed`);
+      toast.success(`${label} removed`, onQueueDelete
+        ? {
+            description: "Save changes to apply this update.",
+          }
+        : undefined);
     } catch (err) {
       toast.error(`Failed to delete ${label}`, {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     }
-  }, [value, label, onChange]);
+  }, [value, label, onChange, onQueueDelete]);
 
   return (
     <div className="space-y-2">
@@ -75,7 +94,7 @@ export function SingleImageUpload({
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         ) : value ? (
           <Image
-            src={value}
+            src={getCatalogImageSrc(value)}
             alt={label}
             fill
             className="object-cover"
@@ -124,6 +143,8 @@ type MultiImageUploadProps = {
   /** Array of image URLs (up to max) */
   value: string[];
   onChange: (urls: string[]) => void;
+  /** Called when removed images should be deleted after the parent record is saved */
+  onQueueDelete?: (url: string) => void;
   folder: string;
   label: string;
   max?: number;
@@ -133,6 +154,7 @@ type MultiImageUploadProps = {
 export function MultiImageUpload({
   value,
   onChange,
+  onQueueDelete,
   folder,
   label,
   max = 3,
@@ -164,14 +186,19 @@ export function MultiImageUpload({
   const handleRemove = useCallback(
     async (index: number) => {
       const url = value[index];
-      try {
-        await deleteImage(url);
-      } catch {
-        // Continue removing from state even if blob delete fails
+
+      if (onQueueDelete) {
+        onQueueDelete(url);
+      } else {
+        try {
+          await deleteImage(url);
+        } catch {
+          // Continue removing from state even if blob delete fails
+        }
       }
       onChange(value.filter((_, i) => i !== index));
     },
-    [value, onChange]
+    [value, onChange, onQueueDelete]
   );
 
   return (
@@ -186,7 +213,7 @@ export function MultiImageUpload({
             className="relative w-[100px] h-[100px] sm:w-[120px] sm:h-[120px] rounded-md border overflow-hidden group"
           >
             <Image
-              src={url}
+              src={getCatalogImageSrc(url)}
               alt={`${label} ${i + 1}`}
               fill
               className="object-cover"

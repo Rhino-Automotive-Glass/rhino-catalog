@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "@/components/logout-button";
+import { getCatalogImageSrc } from "@/lib/catalog-image";
 import type {
   Brand,
   BrandListResponse,
@@ -540,7 +541,7 @@ export default function CatalogPage() {
                       <div className="relative aspect-[10/7]">
                         {imageUrl ? (
                           <Image
-                            src={imageUrl}
+                            src={getCatalogImageSrc(imageUrl)}
                             alt={`${product.primary_brand?.name ?? ""} ${product.model ?? ""}`}
                             fill
                             className="object-contain group-hover:scale-105 transition-transform duration-300"
@@ -652,7 +653,7 @@ export default function CatalogPage() {
                 <div className="relative h-[72vh] min-h-[420px] overflow-hidden rounded-lg bg-white">
                   {getProductImage(previewProduct) ? (
                     <Image
-                      src={getProductImage(previewProduct)!}
+                      src={getCatalogImageSrc(getProductImage(previewProduct))}
                       alt={previewProduct.product_codes?.description_data?.generated ?? "No description available"}
                       fill
                       className="object-contain"
