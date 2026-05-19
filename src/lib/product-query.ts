@@ -4,6 +4,7 @@ import {
   getProductHiddenReason,
   isProductHidden,
 } from "@/lib/product-visibility";
+import { getProductDisplayName } from "@/lib/product-display";
 
 type RawBrand = {
   id: string;
@@ -226,6 +227,8 @@ export function matchesProductSearch(
   const searchableValues = [
     product.model,
     ...getProductSubModels(product),
+    getProductDisplayName(product),
+    product.product_codes.description_data.displayName,
     product.product_codes.product_code_data.generated,
     product.product_codes.description_data.generated,
     product.product_codes.compatibility_data.generated,

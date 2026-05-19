@@ -24,6 +24,7 @@ export type ProductCode = {
   };
   description_data: {
     generated?: string;
+    displayName?: string;
     parte?: string;
     posicion?: string;
     lado?: string;

@@ -28,6 +28,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "@/components/logout-button";
 import { getCatalogImageSrc } from "@/lib/catalog-image";
+import { getProductDisplayName } from "@/lib/product-display";
 import type {
   Brand,
   BrandListResponse,
@@ -76,6 +77,9 @@ export default function CatalogPage() {
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const hasActiveSearch = selectedSearch.trim().length > 0;
   const shouldShowProductResults = Boolean(selectedBrandId || hasActiveSearch);
+  const previewDisplayName = previewProduct
+    ? getProductDisplayName(previewProduct)
+    : "No description available";
 
   // Fetch catalog brands
   useEffect(() => {
@@ -531,6 +535,7 @@ export default function CatalogPage() {
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {products.map((product) => {
                   const imageUrl = getProductImage(product);
+                  const displayName = getProductDisplayName(product);
                   return (
                     <button
                       key={product.id}
@@ -542,7 +547,7 @@ export default function CatalogPage() {
                         {imageUrl ? (
                           <Image
                             src={getCatalogImageSrc(imageUrl)}
-                            alt={`${product.primary_brand?.name ?? ""} ${product.model ?? ""}`}
+                            alt={displayName}
                             fill
                             className="object-contain group-hover:scale-105 transition-transform duration-300"
                           />
@@ -562,12 +567,9 @@ export default function CatalogPage() {
                           </p>
                         )}
                         <div className="flex items-center justify-between gap-2">
-
-                            <p className="text-lg font-semibold text-gray-900">{product.product_codes?.description_data?.generated ?? "—"}</p>
-
-                          {product.model && (
-                            <p className="text-lg text-gray-600">{product.model}</p>
-                          )}
+                          <p className="line-clamp-2 text-lg font-semibold leading-tight text-gray-900">
+                            {displayName}
+                          </p>
                         </div>
                         <p className="truncate text-base text-gray-500">
                           {product.product_codes?.product_code_data?.generated ?? "—"}
@@ -643,7 +645,7 @@ export default function CatalogPage() {
 
               <DialogHeader className="border-b border-gray-200 bg-white px-6 py-4 pr-16 text-left">
                 <DialogTitle className="line-clamp-2 text-xl leading-tight text-gray-900">
-                {previewProduct.product_codes?.description_data?.generated ?? "No description available"}
+                  {previewDisplayName}
                 </DialogTitle>
                 <DialogDescription className="truncate text-sm text-gray-500">
                   {previewProduct.product_codes?.product_code_data?.generated ?? "—"}
@@ -654,7 +656,7 @@ export default function CatalogPage() {
                   {getProductImage(previewProduct) ? (
                     <Image
                       src={getCatalogImageSrc(getProductImage(previewProduct))}
-                      alt={previewProduct.product_codes?.description_data?.generated ?? "No description available"}
+                      alt={previewDisplayName}
                       fill
                       className="object-contain"
                     />
