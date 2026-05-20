@@ -12,6 +12,19 @@ export function stripProductYears(value: string): string {
     .trim();
 }
 
+export function getProductDisplayYear(product: Pick<ProductWithSource, "product_codes">): string | null {
+  const description = product.product_codes?.description_data;
+  const candidates = [
+    description?.displayName,
+    description?.generated,
+    product.product_codes?.compatibility_data?.generated,
+  ];
+  const years = candidates.flatMap((value) => value?.match(YEAR_PATTERN) ?? []);
+  const uniqueYears = Array.from(new Set(years));
+
+  return uniqueYears.length > 0 ? uniqueYears.join(" - ") : null;
+}
+
 export function getProductDisplayName(product: Pick<ProductWithSource, "product_codes">): string {
   const description = product.product_codes?.description_data;
   const name = description?.displayName ?? description?.generated ?? "";

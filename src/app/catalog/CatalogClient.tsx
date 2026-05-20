@@ -28,7 +28,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "@/components/logout-button";
 import { getCatalogImageSrc } from "@/lib/catalog-image";
-import { getProductDisplayName } from "@/lib/product-display";
+import { getProductDisplayName, getProductDisplayYear } from "@/lib/product-display";
 import type {
   Brand,
   BrandListResponse,
@@ -80,6 +80,7 @@ export default function CatalogPage() {
   const previewDisplayName = previewProduct
     ? getProductDisplayName(previewProduct)
     : "No description available";
+  const previewDisplayYear = previewProduct ? getProductDisplayYear(previewProduct) : null;
 
   // Fetch catalog brands
   useEffect(() => {
@@ -536,6 +537,7 @@ export default function CatalogPage() {
                 {products.map((product) => {
                   const imageUrl = getProductImage(product);
                   const displayName = getProductDisplayName(product);
+                  const displayYear = getProductDisplayYear(product);
                   return (
                     <button
                       key={product.id}
@@ -571,6 +573,11 @@ export default function CatalogPage() {
                             {displayName}
                           </p>
                         </div>
+                        {displayYear && (
+                          <p className="truncate text-sm font-medium text-gray-500">
+                            {displayYear}
+                          </p>
+                        )}
                         <p className="truncate text-base text-gray-500">
                           {product.product_codes?.product_code_data?.generated ?? "—"}
                         </p>
@@ -647,6 +654,11 @@ export default function CatalogPage() {
                 <DialogTitle className="line-clamp-2 text-xl leading-tight text-gray-900">
                   {previewDisplayName}
                 </DialogTitle>
+                {previewDisplayYear && (
+                  <p className="mt-1 text-sm font-medium text-gray-600">
+                    {previewDisplayYear}
+                  </p>
+                )}
                 <DialogDescription className="truncate text-sm text-gray-500">
                   {previewProduct.product_codes?.product_code_data?.generated ?? "—"}
                 </DialogDescription>
