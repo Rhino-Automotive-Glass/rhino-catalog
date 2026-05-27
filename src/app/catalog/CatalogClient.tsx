@@ -426,7 +426,7 @@ export default function CatalogPage() {
         {isVehicleTab ? (
           <div className="mb-8 text-center">
             <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              Browse Vehicles
+              Vehículos
             </h1>
           </div>
         ) : selectedBrandId ? (
@@ -437,7 +437,7 @@ export default function CatalogPage() {
                 All brands
               </Button>
               <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-                {selectedBrand?.name ?? "Browse Brands"}
+                {selectedBrand?.name ?? "Marcas"}
               </h1>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {totalCount} {hasActiveSearch ? "matching products" : "related products"}
@@ -518,7 +518,7 @@ export default function CatalogPage() {
           <div className="mb-8">
             <div className="text-center">
               <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-                {hasActiveSearch ? "Search Products" : "Browse Brands"}
+                {hasActiveSearch ? "Search Products" : "Marcas"}
               </h1>
               {/* <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {hasActiveSearch
