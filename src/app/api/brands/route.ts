@@ -8,6 +8,8 @@ type RawBrand = {
   name: string;
 };
 
+const CATALOG_INCLUDED_BRANDS = ["Nissan"];
+
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
   return Array.isArray(value) ? value[0] ?? null : value;
@@ -80,6 +82,39 @@ export async function GET(req: NextRequest) {
 
       if (!data || data.length < batchSize) break;
       from += batchSize;
+    }
+
+    const { data: includedBrands, error: includedBrandsError } = await supabase
+      .from("brands")
+      .select("id, name")
+      .in("name", CATALOG_INCLUDED_BRANDS);
+
+    if (includedBrandsError) {
+      console.error("GET /api/brands catalog included brands failed", {
+        code: includedBrandsError.code,
+        details: includedBrandsError.details,
+        hint: includedBrandsError.hint,
+        message: includedBrandsError.message,
+      });
+
+      return NextResponse.json(
+        {
+          error: includedBrandsError.message,
+          code: includedBrandsError.code,
+          details: includedBrandsError.details,
+          hint: includedBrandsError.hint,
+        },
+        { status: 500 }
+      );
+    }
+
+    for (const brand of includedBrands ?? []) {
+      if (brandCounts.has(brand.id)) continue;
+      brandCounts.set(brand.id, {
+        id: brand.id,
+        name: brand.name,
+        productCount: 0,
+      });
     }
 
     return NextResponse.json<BrandListResponse>({

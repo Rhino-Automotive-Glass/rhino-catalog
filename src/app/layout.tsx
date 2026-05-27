@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rhino Catalog Admin",
-  description: "Product catalog management",
+  title: "Rhino Catalog",
+  description: "Product catalog",
 };
 
 export default function RootLayout({

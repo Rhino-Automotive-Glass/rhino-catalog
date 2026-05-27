@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
+    qualities: [75, 90],
     localPatterns: [
       {
         pathname: "/api/catalog-image",
@@ -10,7 +11,13 @@ const nextConfig: NextConfig = {
         pathname: "/brands/**",
       },
       {
+        pathname: "/uploads/products/**",
+      },
+      {
         pathname: "/rhino-logo.png",
+      },
+      {
+        pathname: "/parabrisas-medallones-van-camioneta-autobuses.webp",
       },
     ],
     remotePatterns: [

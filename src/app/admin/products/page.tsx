@@ -16,6 +16,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Loader2,
+  Search,
 } from "lucide-react";
 
 import type {
@@ -27,6 +28,7 @@ import type {
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -128,6 +130,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
 
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [productSearch, setProductSearch] = useState("");
   const [primaryBrandFilter, setPrimaryBrandFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [subModels, setSubModels] = useState<string[]>([]);
@@ -150,6 +153,11 @@ export default function ProductsPage() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
+  const handleProductSearchChange = (value: string) => {
+    setProductSearch(value);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
@@ -158,6 +166,7 @@ export default function ProductsPage() {
         pageSize: String(pagination.pageSize),
         visibility: "all",
       });
+      if (productSearch.trim()) params.set("search", productSearch.trim());
       if (primaryBrandFilter !== "all") params.set("primaryBrandId", primaryBrandFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (subModelFilter !== "all") params.set("subModel", subModelFilter);
@@ -176,7 +185,7 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.pageIndex, pagination.pageSize, primaryBrandFilter, statusFilter, subModelFilter]);
+  }, [pagination.pageIndex, pagination.pageSize, primaryBrandFilter, productSearch, statusFilter, subModelFilter]);
 
   useEffect(() => {
     fetchProducts();
@@ -244,7 +253,16 @@ export default function ProductsPage() {
 
       <div className="card p-4 sm:p-6 md:p-8">
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="flex flex-col gap-3 mb-6 lg:flex-row">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={productSearch}
+              onChange={(event) => handleProductSearchChange(event.target.value)}
+              placeholder="Search code or description"
+              className="pl-10"
+            />
+          </div>
           <Select value={primaryBrandFilter} onValueChange={handlePrimaryBrandFilterChange}>
             <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="Primary brand" />

@@ -12,9 +12,10 @@ import {
   ChevronRight,
   Loader2,
   Search,
-  Settings,
+  Tags,
   X,
 } from "lucide-react";
+import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,19 +26,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { LogoutButton } from "@/components/logout-button";
 import { getCatalogImageSrc } from "@/lib/catalog-image";
 import { getProductDisplayName, getProductDisplayYear } from "@/lib/product-display";
 import type {
   Brand,
   BrandListResponse,
-  ProductWithSource,
   PaginatedResponse,
+  ProductGroup,
+  ProductWithSource,
   SubModelListResponse,
 } from "@/lib/types";
 
 const PAGE_SIZE = 40;
+const GROUP_PAGE_SIZE = 24;
 
 const BRAND_LOGOS: Record<string, string> = {
   Changan: "/brands/changan.png",
@@ -49,6 +50,7 @@ const BRAND_LOGOS: Record<string, string> = {
   JAC: "/brands/jac.png",
   Joylong: "/brands/joylong.png",
   "Mercedes-Benz": "/brands/mercedesbenz.png",
+  Nissan: "/brands/nissan.png",
   Peugeot: "/brands/peugeot.png",
   Ram: "/brands/ram.png",
   Renault: "/brands/renault.png",
@@ -57,6 +59,12 @@ const BRAND_LOGOS: Record<string, string> = {
   Volkswagen: "/brands/wolkswagen.png",
 };
 
+function formatGroupYears(group: ProductGroup): string {
+  if (!group.year_start && !group.year_end) return "All years";
+  if (group.year_start && group.year_end) return `${group.year_start}-${group.year_end}`;
+  return String(group.year_start ?? group.year_end);
+}
+
 export default function CatalogPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -64,6 +72,10 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<ProductWithSource[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
+  const [vehicleGroups, setVehicleGroups] = useState<ProductGroup[]>([]);
+  const [vehicleGroupCount, setVehicleGroupCount] = useState(0);
+  const [vehicleGroupPage, setVehicleGroupPage] = useState(1);
+  const [vehicleGroupsLoading, setVehicleGroupsLoading] = useState(false);
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(false);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -73,10 +85,12 @@ export default function CatalogPage() {
   const selectedBrandId = searchParams.get("brand") ?? "";
   const selectedSubModel = searchParams.get("subModel") ?? "";
   const selectedSearch = searchParams.get("search") ?? "";
+  const selectedTab = searchParams.get("tab") === "vehicle" ? "vehicle" : "brand";
   const [searchInput, setSearchInput] = useState(selectedSearch);
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const hasActiveSearch = selectedSearch.trim().length > 0;
-  const shouldShowProductResults = Boolean(selectedBrandId || hasActiveSearch);
+  const isVehicleTab = selectedTab === "vehicle";
+  const shouldShowProductResults = selectedTab === "brand" && Boolean(selectedBrandId || hasActiveSearch);
   const previewDisplayName = previewProduct
     ? getProductDisplayName(previewProduct)
     : "No description available";
@@ -95,7 +109,7 @@ export default function CatalogPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedBrandId) {
+    if (selectedTab !== "brand" || !selectedBrandId) {
       setSubModels([]);
       setSubModelsLoading(false);
       return undefined;
@@ -130,7 +144,7 @@ export default function CatalogPage() {
     return () => {
       controller.abort();
     };
-  }, [selectedBrandId]);
+  }, [selectedBrandId, selectedTab]);
 
   // Fetch products
   useEffect(() => {
@@ -195,10 +209,51 @@ export default function CatalogPage() {
   }, [page, selectedBrandId, selectedSearch, selectedSubModel, shouldShowProductResults]);
 
   useEffect(() => {
+    if (!isVehicleTab) {
+      setVehicleGroupsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    queueMicrotask(() => setVehicleGroupsLoading(true));
+
+    fetch(
+      `/api/product-groups?scope=catalog&page=${vehicleGroupPage}&pageSize=${GROUP_PAGE_SIZE}`,
+      { signal: controller.signal }
+    )
+      .then(async (res) => {
+        const json = (await res.json()) as PaginatedResponse<ProductGroup> & {
+          error?: string;
+        };
+
+        if (!res.ok) throw new Error(json.error ?? "Failed to load vehicle groups");
+
+        setVehicleGroups(Array.isArray(json.data) ? json.data : []);
+        setVehicleGroupCount(typeof json.count === "number" ? json.count : 0);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+
+        setVehicleGroups([]);
+        setVehicleGroupCount(0);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setVehicleGroupsLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isVehicleTab, vehicleGroupPage]);
+
+  useEffect(() => {
     setSearchInput(selectedSearch);
   }, [selectedSearch]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const vehicleGroupPages = Math.max(1, Math.ceil(vehicleGroupCount / GROUP_PAGE_SIZE));
 
   function getProductImage(product: ProductWithSource): string | null {
     return product.images?.[0] ?? null;
@@ -217,6 +272,7 @@ export default function CatalogPage() {
     setSubModelsLoading(true);
 
     const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "brand");
     params.set("brand", brandId);
     params.delete("subModel");
     router.push(`${pathname}?${params.toString()}`);
@@ -231,6 +287,7 @@ export default function CatalogPage() {
     setSubModelsLoading(false);
 
     const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "brand");
     params.delete("brand");
     params.delete("subModel");
 
@@ -245,6 +302,7 @@ export default function CatalogPage() {
     setProductsLoading(true);
 
     const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "brand");
 
     if (nextSubModel) {
       params.set("subModel", nextSubModel);
@@ -257,6 +315,8 @@ export default function CatalogPage() {
   }
 
   const updateSearchFilter = useEffectEvent((nextSearch: string) => {
+    if (selectedTab !== "brand") return;
+
     setPage(1);
     setProducts([]);
     setTotalCount(0);
@@ -280,6 +340,28 @@ export default function CatalogPage() {
       router.replace(query ? `${pathname}?${query}` : pathname);
     });
   });
+
+  function setCatalogTab(tab: "brand" | "vehicle") {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+
+    if (tab === "vehicle") {
+      params.delete("brand");
+      params.delete("subModel");
+      params.delete("search");
+      setSearchInput("");
+      setPage(1);
+      setProducts([]);
+      setTotalCount(0);
+      setVehicleGroupPage(1);
+    }
+
+    if (tab === "brand") {
+      setVehicleGroupPage(1);
+    }
+
+    router.push(`${pathname}?${params.toString()}`);
+  }
 
   useEffect(() => {
     const normalizedSearchInput = searchInput.trim();
@@ -306,35 +388,48 @@ export default function CatalogPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
-          <Link href="/catalog" className="flex items-center gap-3 shrink-0">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
-              <BookOpen className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-xl font-semibold hidden sm:inline text-gray-900 dark:text-white">Rhino Catalog Admin</span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <nav className="flex gap-1 text-sm">
-              <Link href="/catalog" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium bg-cyan-400/10 text-cyan-400 border border-cyan-400/30 shadow-[0_0_10px_rgba(34,211,238,0.35)]">
-                <BookOpen className="h-4 w-4" />
-                <span className="hidden sm:inline">Catalog</span>
-              </Link>
-              <Link href="/admin/products" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                <Settings className="h-4 w-4" />
-                <span className="hidden sm:inline">Admin</span>
-              </Link>
-            </nav>
-            <LogoutButton />
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      <AppHeader area="catalog" />
 
       {/* Main content */}
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1">
-        {selectedBrandId ? (
+        <div className="mb-8 flex justify-center">
+          <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <button
+              type="button"
+              onClick={() => setCatalogTab("brand")}
+              className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                selectedTab === "brand"
+                  ? "bg-cyan-400/10 text-cyan-700 dark:text-cyan-300"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-pressed={selectedTab === "brand"}
+            >
+              <BookOpen className="h-4 w-4" />
+              Brand
+            </button>
+            <button
+              type="button"
+              onClick={() => setCatalogTab("vehicle")}
+              className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                selectedTab === "vehicle"
+                  ? "bg-cyan-400/10 text-cyan-700 dark:text-cyan-300"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-pressed={selectedTab === "vehicle"}
+            >
+              <Tags className="h-4 w-4" />
+              Vehicle
+            </button>
+          </div>
+        </div>
+
+        {isVehicleTab ? (
+          <div className="mb-8 text-center">
+            <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+              Browse Vehicles
+            </h1>
+          </div>
+        ) : selectedBrandId ? (
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <Button variant="ghost" size="sm" className="-ml-2 text-gray-600" onClick={clearBrand}>
@@ -467,7 +562,61 @@ export default function CatalogPage() {
           </div>
         )}
 
-        {!shouldShowProductResults ? (
+        {isVehicleTab ? (
+          <>
+            {vehicleGroupsLoading ? (
+              <div className="flex items-center justify-center py-32">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-500 dark:text-gray-400" />
+              </div>
+            ) : vehicleGroups.length === 0 ? (
+              <div className="flex items-center justify-center py-32 text-gray-500 dark:text-gray-400">
+                No published vehicle groups found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {vehicleGroups.map((group, index) => (
+                  <Link
+                    key={group.id}
+                    href={`/catalog/groups/${group.slug}`}
+                    className="group overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-[0_0_22px_rgba(34,211,238,0.18)] dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <div className="relative aspect-[16/9] bg-white dark:bg-gray-900">
+                      <Image
+                        src={getCatalogImageSrc(group.images[0])}
+                        alt={group.name}
+                        fill
+                        className="object-cover transition-transform duration-300 group-hover:scale-105 p-4"
+                        sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                        priority={index === 0}
+                      />
+                    </div>
+                    <div className="p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-cyan-700 dark:text-cyan-300">
+                            {group.brand?.name ?? "Any brand"}
+                          </p>
+                          <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+                            {group.name}
+                          </h2>
+                        </div>
+                        <Tags className="mt-1 h-5 w-5 shrink-0 text-gray-400 transition-colors group-hover:text-cyan-500" />
+                      </div>
+                      <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                        {[group.sub_model, formatGroupYears(group)].filter(Boolean).join(" / ")}
+                      </p>
+                      {group.description && (
+                        <p className="mt-3 line-clamp-2 text-sm text-gray-600 dark:text-gray-300">
+                          {group.description}
+                        </p>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        ) : !shouldShowProductResults ? (
           <>
             {brandsLoading ? (
               <div className="flex items-center justify-center py-32">
@@ -621,6 +770,32 @@ export default function CatalogPage() {
             >
               Next
               <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        )}
+
+        {isVehicleTab && !vehicleGroupsLoading && vehicleGroupPages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setVehicleGroupPage((current) => Math.max(1, current - 1))}
+              disabled={vehicleGroupPage <= 1}
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              Page {vehicleGroupPage} of {vehicleGroupPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setVehicleGroupPage((current) => Math.min(vehicleGroupPages, current + 1))}
+              disabled={vehicleGroupPage >= vehicleGroupPages}
+            >
+              Next
+              <ChevronRight className="ml-1 h-4 w-4" />
             </Button>
           </div>
         )}

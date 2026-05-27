@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
+import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { getUserRole, canEditImages } from "@/lib/roles";
+
+export const runtime = "nodejs";
+
+const LOCAL_UPLOAD_PREFIX = "/uploads/products";
+
+function sanitizePathPart(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "upload";
+}
+
+function sanitizeFolder(folder: string): string {
+  return folder
+    .split("/")
+    .map(sanitizePathPart)
+    .filter(Boolean)
+    .join("/");
+}
+
+function localUploadEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
 
 /**
  * POST /api/upload
@@ -19,23 +46,62 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
+  try {
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
 
-  if (!file) {
-    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // Build a path: products/{folder}/{filename}
+    const folder = sanitizeFolder(req.nextUrl.searchParams.get("folder") ?? "misc");
+    const filename = sanitizePathPart(file.name);
+    const pathname = `products/${folder}/${filename}`;
+
+    if (!process.env.BLOB_READ_WRITE_TOKEN && localUploadEnabled()) {
+      const fileExtension = filename.includes(".")
+        ? filename.slice(filename.lastIndexOf("."))
+        : "";
+      const filenameBase = filename.replace(/\.[^.]+$/, "");
+      const localFilename = `${filenameBase}-${crypto.randomUUID()}${fileExtension}`;
+      const uploadDirectory = join(process.cwd(), "public", LOCAL_UPLOAD_PREFIX, folder);
+      const publicPath = `${LOCAL_UPLOAD_PREFIX}/${folder}/${localFilename}`;
+
+      await mkdir(uploadDirectory, { recursive: true });
+      await writeFile(
+        join(uploadDirectory, localFilename),
+        Buffer.from(await file.arrayBuffer())
+      );
+
+      return NextResponse.json({
+        url: publicPath,
+        pathname: publicPath,
+        storage: "local",
+      });
+    }
+
+    const blob = await put(pathname, file, {
+      access: "public",
+      addRandomSuffix: true,
+    });
+
+    return NextResponse.json({ url: blob.url, pathname: blob.pathname, storage: "blob" });
+  } catch (error) {
+    console.error("POST /api/upload failed", {
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to upload image",
+      },
+      { status: 500 }
+    );
   }
-
-  // Build a path: products/{folder}/{filename}
-  const folder = req.nextUrl.searchParams.get("folder") ?? "misc";
-  const pathname = `products/${folder}/${file.name}`;
-
-  const blob = await put(pathname, file, {
-    access: "public",
-    addRandomSuffix: true,
-  });
-
-  return NextResponse.json({ url: blob.url, pathname: blob.pathname });
 }
 
 /**
@@ -57,6 +123,16 @@ export async function DELETE(req: NextRequest) {
 
   if (!url) {
     return NextResponse.json({ error: "No URL provided" }, { status: 400 });
+  }
+
+  if (
+    typeof url === "string" &&
+    url.startsWith(`${LOCAL_UPLOAD_PREFIX}/`) &&
+    localUploadEnabled()
+  ) {
+    const localPath = join(process.cwd(), "public", url);
+    await unlink(localPath).catch(() => {});
+    return NextResponse.json({ success: true });
   }
 
   await del(url);

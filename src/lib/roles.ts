@@ -55,6 +55,11 @@ export function canEditProducts(role: RoleName): boolean {
   return role === "super_admin" || role === "admin";
 }
 
+/** Admin and super_admin can manage curated product groups */
+export function canManageProductGroups(role: RoleName): boolean {
+  return canEditProducts(role);
+}
+
 /** Admin, super_admin, and editor can edit product images */
 export function canEditImages(role: RoleName): boolean {
   return role === "super_admin" || role === "admin" || role === "editor";
