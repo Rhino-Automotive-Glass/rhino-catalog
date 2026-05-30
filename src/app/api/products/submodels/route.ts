@@ -7,6 +7,7 @@ import {
   mapProductRow,
 } from "@/lib/product-query";
 import type { SubModelListResponse } from "@/lib/types";
+import { apiFailure } from "@/lib/api-error-response";
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -32,24 +33,16 @@ export async function GET(req: NextRequest) {
   );
 
   if (error) {
-    console.error("GET /api/products/submodels failed", {
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
-      brandId,
-      primaryBrandId,
-    });
-
-    return NextResponse.json(
-      {
-        error: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
+    return apiFailure({
+      context: "GET /api/products/submodels failed",
+      error,
+      userMessage:
+        "Vehicle submodels could not be loaded. Try changing the brand filter or contact support with the debug ID.",
+      log: {
+        brandId,
+        primaryBrandId,
       },
-      { status: 500 }
-    );
+    });
   }
 
   const subModels = Array.from(

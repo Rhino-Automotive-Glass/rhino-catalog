@@ -12,6 +12,7 @@ import {
 } from "@/lib/product-group-query";
 import { productGroupCreateSchema } from "@/lib/schemas";
 import type { PaginatedResponse, ProductGroup } from "@/lib/types";
+import { apiFailure } from "@/lib/api-error-response";
 
 function cleanPayload<T extends Record<string, unknown>>(payload: T) {
   return Object.fromEntries(
@@ -91,18 +92,18 @@ export async function GET(req: NextRequest) {
   const { data, error, count } = await query;
 
   if (error) {
-    console.error("GET /api/product-groups failed", {
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
-      status,
-      scope,
-      brandId,
-      search,
+    return apiFailure({
+      context: "GET /api/product-groups failed",
+      error,
+      userMessage:
+        "Product groups could not be loaded. Refresh the page or contact support with the debug ID.",
+      log: {
+        status,
+        scope,
+        brandId,
+        search,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json<PaginatedResponse<ProductGroup>>({
@@ -117,12 +118,21 @@ export async function POST(req: NextRequest) {
   const userRole = await getUserRole();
 
   if (!userRole) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      {
+        error: "Not authenticated",
+        userMessage: "Your session expired. Sign in again before creating a product group.",
+      },
+      { status: 401 }
+    );
   }
 
   if (!canManageProductGroups(userRole.role)) {
     return NextResponse.json(
-      { error: "You do not have permission to manage product groups" },
+      {
+        error: "You do not have permission to manage product groups",
+        userMessage: "Your account does not have permission to create product groups.",
+      },
       { status: 403 }
     );
   }
@@ -132,7 +142,12 @@ export async function POST(req: NextRequest) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten() },
+      {
+        error: "Validation failed",
+        userMessage:
+          "Some product group fields are invalid. Check the required name, year range, status, and images.",
+        details: parsed.error.flatten(),
+      },
       { status: 400 }
     );
   }
@@ -142,15 +157,12 @@ export async function POST(req: NextRequest) {
   try {
     adminSupabase = createAdminClient();
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Server write client is not configured",
-      },
-      { status: 500 }
-    );
+    return apiFailure({
+      context: "POST /api/product-groups admin client setup failed",
+      error,
+      userMessage:
+        "Product group could not be created because server write access is not configured.",
+    });
   }
 
   const basePayload = cleanPayload(parsed.data);
@@ -167,15 +179,13 @@ export async function POST(req: NextRequest) {
           insertPayload.slug
         );
       } catch (slugError) {
-        return NextResponse.json(
-          {
-            error:
-              slugError instanceof Error
-                ? slugError.message
-                : "Failed to generate a unique product group slug",
-          },
-          { status: 500 }
-        );
+        return apiFailure({
+          context: "POST /api/product-groups slug generation failed",
+          error: slugError,
+          userMessage:
+            "A unique group URL could not be generated. Please adjust the group name or vehicle fields and try again.",
+          log: { slug: insertPayload.slug },
+        });
       }
     }
 
@@ -192,15 +202,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (error) {
-    console.error("POST /api/product-groups failed", {
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
-      payload: parsed.data,
+    return apiFailure({
+      context: "POST /api/product-groups failed",
+      error,
+      userMessage:
+        "The product group could not be saved. Please try again or contact support with the debug ID.",
+      log: {
+        payload: parsed.data,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   if (!data) {

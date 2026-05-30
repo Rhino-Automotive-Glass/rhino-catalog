@@ -26,6 +26,7 @@ import type {
   PaginatedResponse,
   SubModelListResponse,
 } from "@/lib/types";
+import { getApiErrorDescription, logAdminActionError, readApiError } from "@/lib/api-error";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -172,15 +173,20 @@ export default function ProductsPage() {
       if (subModelFilter !== "all") params.set("subModel", subModelFilter);
 
       const res = await fetch(`/api/products?${params}`);
+      if (!res.ok) throw await readApiError(res, "Failed to load products");
       const json: PaginatedResponse<ProductWithSource> = await res.json();
-
-      if (!res.ok) throw new Error((json as unknown as { error: string }).error);
 
       setData(json.data);
       setRowCount(json.count);
     } catch (err) {
+      logAdminActionError("Failed to load products in admin", err, {
+        primaryBrandFilter,
+        productSearch,
+        statusFilter,
+        subModelFilter,
+      });
       toast.error("Failed to load products", {
-        description: err instanceof Error ? err.message : "Unknown error",
+        description: getApiErrorDescription(err, "Unknown error"),
       });
     } finally {
       setLoading(false);
@@ -193,11 +199,15 @@ export default function ProductsPage() {
 
   useEffect(() => {
     fetch("/api/brands?scope=primary")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load brands"))))
+      .then(async (res) => {
+        if (!res.ok) throw await readApiError(res, "Failed to load brands");
+        return res.json();
+      })
       .then((data: BrandListResponse) => setBrands(data.brands ?? []))
       .catch((err: unknown) => {
+        logAdminActionError("Failed to load product brand filters", err);
         toast.error("Failed to load brands", {
-          description: err instanceof Error ? err.message : "Unknown error",
+          description: getApiErrorDescription(err, "Unknown error"),
         });
       });
   }, []);
@@ -211,11 +221,14 @@ export default function ProductsPage() {
     fetch(`/api/products/submodels?primaryBrandId=${primaryBrandFilter}`, { signal: controller.signal })
       .then(async (res) => {
         const json = (await res.json()) as SubModelListResponse & { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "Failed to load submodels");
+        if (!res.ok) throw await readApiError(res, "Failed to load submodels");
         setSubModels(Array.isArray(json.subModels) ? json.subModels : []);
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
+        logAdminActionError("Failed to load product submodel filters", err, {
+          primaryBrandFilter,
+        });
         setSubModels([]);
       })
       .finally(() => {

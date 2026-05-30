@@ -8,6 +8,7 @@ import {
   PRODUCT_WITH_SOURCE_SELECT,
 } from "@/lib/product-query";
 import { matchesVisibilityStatus } from "@/lib/product-visibility";
+import { apiFailure } from "@/lib/api-error-response";
 
 /**
  * GET /api/products
@@ -74,28 +75,20 @@ export async function GET(req: NextRequest) {
   const { data, error, count } = await query;
 
   if (error) {
-    console.error("GET /api/products failed", {
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
-      primaryBrandId,
-      brandId,
-      subModel,
-      status,
-      visibility: normalizedVisibility,
-      search,
-    });
-
-    return NextResponse.json(
-      {
-        error: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
+    return apiFailure({
+      context: "GET /api/products failed",
+      error,
+      userMessage:
+        "Products could not be loaded. Refresh the page or contact support with the debug ID.",
+      log: {
+        primaryBrandId,
+        brandId,
+        subModel,
+        status,
+        visibility: normalizedVisibility,
+        search,
       },
-      { status: 500 }
-    );
+    });
   }
 
   const mappedProducts = (data ?? []).map((row) => mapProductRow(row));

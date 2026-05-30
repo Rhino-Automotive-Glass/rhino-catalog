@@ -15,6 +15,7 @@ import {
   mapProductRow,
 } from "@/lib/product-query";
 import type { ProductGroupSuggestion } from "@/lib/types";
+import { apiFailure } from "@/lib/api-error-response";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -22,12 +23,21 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   const userRole = await getUserRole();
 
   if (!userRole) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      {
+        error: "Not authenticated",
+        userMessage: "Your session expired. Sign in again to load suggestions.",
+      },
+      { status: 401 }
+    );
   }
 
   if (!canManageProductGroups(userRole.role)) {
     return NextResponse.json(
-      { error: "You do not have permission to manage product groups" },
+      {
+        error: "You do not have permission to manage product groups",
+        userMessage: "Your account does not have permission to load group suggestions.",
+      },
       { status: 403 }
     );
   }
@@ -37,15 +47,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
     supabase = createAdminClient();
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Server read client is not configured",
-      },
-      { status: 500 }
-    );
+    return apiFailure({
+      context: "GET /api/product-groups/[id]/suggestions admin client setup failed",
+      error,
+      userMessage:
+        "Suggestions could not be loaded because server read access is not configured.",
+    });
   }
 
   const { id } = await ctx.params;
@@ -58,7 +65,16 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
   if (groupError) {
     const status = groupError.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: groupError.message }, { status });
+    return NextResponse.json(
+      {
+        error: groupError.message,
+        userMessage:
+          status === 404
+            ? "This product group could not be found. It may have been deleted."
+            : "The product group could not be loaded before finding suggestions.",
+      },
+      { status }
+    );
   }
 
   const group = mapProductGroupRow(groupData);
@@ -68,7 +84,13 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     .eq("group_id", group.id);
 
   if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 });
+    return apiFailure({
+      context: "GET /api/product-groups/[id]/suggestions memberships failed",
+      error: existingError,
+      userMessage:
+        "Suggestions could not be loaded because current group products could not be checked.",
+      log: { id, groupId: group.id },
+    });
   }
 
   const existingProductIds = new Set((existingRows ?? []).map((row) => row.product_id as string));
@@ -89,15 +111,17 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   const { data, error } = await productQuery;
 
   if (error) {
-    console.error("GET /api/product-groups/[id]/suggestions failed", {
-      id,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
+    return apiFailure({
+      context: "GET /api/product-groups/[id]/suggestions failed",
+      error,
+      userMessage:
+        "Suggestions could not be loaded. Refresh the page or contact support with the debug ID.",
+      log: {
+        id,
+        groupId: group.id,
+        brandId: group.brand_id,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   const suggestions: ProductGroupSuggestion[] = (data ?? [])

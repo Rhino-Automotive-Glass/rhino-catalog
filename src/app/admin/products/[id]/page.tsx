@@ -11,6 +11,7 @@ import Link from "next/link";
 import type { ProductWithSource } from "@/lib/types";
 import type { RoleName } from "@/lib/roles";
 import { productFormSchema, type ProductFormValues, emptyImages } from "@/lib/schemas";
+import { getApiErrorDescription, logAdminActionError, readApiError } from "@/lib/api-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -98,14 +99,15 @@ export default function EditProductPage({
     setLoading(true);
     try {
       const res = await fetch(`/api/products/${encodeURIComponent(id)}`);
-      if (!res.ok) throw new Error("Product not found");
+      if (!res.ok) throw await readApiError(res, "Product not found");
       const data: ProductWithSource = await res.json();
       setProduct(data);
       setPendingImageDeletionUrls([]);
       form.reset(getProductFormValues(data));
     } catch (err) {
+      logAdminActionError("Failed to load product in admin", err, { productId: id });
       toast.error("Failed to load product", {
-        description: err instanceof Error ? err.message : "Unknown error",
+        description: getApiErrorDescription(err, "Unknown error"),
       });
     } finally {
       setLoading(false);
@@ -143,8 +145,7 @@ export default function EditProductPage({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Save failed");
+        throw await readApiError(res, "Save failed");
       }
 
       const savedProduct = (await res.json()) as ProductWithSource;
@@ -158,7 +159,7 @@ export default function EditProductPage({
           try {
             await deleteImage(url);
           } catch (error) {
-            console.warn("Failed to delete superseded image blob", {
+            logAdminActionError("Failed to delete superseded product image", error, {
               message: error instanceof Error ? error.message : "Unknown error",
               productId: savedProduct.id,
               url,
@@ -173,8 +174,9 @@ export default function EditProductPage({
       toast.success("Product saved");
       router.refresh();
     } catch (err) {
+      logAdminActionError("Failed to save product in admin", err, { productId: id });
       toast.error("Failed to save product", {
-        description: err instanceof Error ? err.message : "Unknown error",
+        description: getApiErrorDescription(err, "Unknown error"),
       });
     } finally {
       setSaving(false);

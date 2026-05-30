@@ -15,6 +15,7 @@ import {
   productGroupProductUpdateSchema,
 } from "@/lib/schemas";
 import type { ProductGroupProductsResponse } from "@/lib/types";
+import { apiFailure } from "@/lib/api-error-response";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -100,15 +101,16 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.error("GET /api/product-groups/[id]/products failed", {
-      id,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
+    return apiFailure({
+      context: "GET /api/product-groups/[id]/products failed",
+      error,
+      userMessage:
+        "Group products could not be loaded. Refresh the page or contact support with the debug ID.",
+      log: {
+        id,
+        groupId,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   let items = (data ?? [])
@@ -129,12 +131,21 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const userRole = await getUserRole();
 
   if (!userRole) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      {
+        error: "Not authenticated",
+        userMessage: "Your session expired. Sign in again before adding products.",
+      },
+      { status: 401 }
+    );
   }
 
   if (!canManageProductGroups(userRole.role)) {
     return NextResponse.json(
-      { error: "You do not have permission to manage product groups" },
+      {
+        error: "You do not have permission to manage product groups",
+        userMessage: "Your account does not have permission to add products to groups.",
+      },
       { status: 403 }
     );
   }
@@ -144,7 +155,11 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten() },
+      {
+        error: "Validation failed",
+        userMessage: "The selected product is invalid. Refresh the product picker and try again.",
+        details: parsed.error.flatten(),
+      },
       { status: 400 }
     );
   }
@@ -154,22 +169,29 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
     adminSupabase = createAdminClient();
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Server write client is not configured",
-      },
-      { status: 500 }
-    );
+    return apiFailure({
+      context: "POST /api/product-groups/[id]/products admin client setup failed",
+      error,
+      userMessage:
+        "The product could not be added because server write access is not configured.",
+      log: { id },
+    });
   }
 
   const { groupId, error: groupError } = await fetchGroupId(adminSupabase, id);
 
   if (groupError || !groupId) {
     const status = groupError?.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: groupError?.message ?? "Group not found" }, { status });
+    return NextResponse.json(
+      {
+        error: groupError?.message ?? "Group not found",
+        userMessage:
+          status === 404
+            ? "This product group could not be found. It may have been deleted."
+            : "The product group could not be loaded before adding the product.",
+      },
+      { status }
+    );
   }
 
   const { data, error } = await adminSupabase
@@ -187,16 +209,16 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     .single();
 
   if (error) {
-    console.error("POST /api/product-groups/[id]/products failed", {
-      id,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
-      payload: parsed.data,
+    return apiFailure({
+      context: "POST /api/product-groups/[id]/products failed",
+      error,
+      userMessage:
+        "The product could not be added to the group. Please try again or contact support with the debug ID.",
+      log: {
+        id,
+        payload: parsed.data,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json(mapProductGroupProductRow(data), { status: 201 });
@@ -206,12 +228,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const userRole = await getUserRole();
 
   if (!userRole) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      {
+        error: "Not authenticated",
+        userMessage: "Your session expired. Sign in again before updating group products.",
+      },
+      { status: 401 }
+    );
   }
 
   if (!canManageProductGroups(userRole.role)) {
     return NextResponse.json(
-      { error: "You do not have permission to manage product groups" },
+      {
+        error: "You do not have permission to manage product groups",
+        userMessage: "Your account does not have permission to update group products.",
+      },
       { status: 403 }
     );
   }
@@ -221,7 +252,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten() },
+      {
+        error: "Validation failed",
+        userMessage:
+          "The group product update is invalid. Refresh the page and try again.",
+        details: parsed.error.flatten(),
+      },
       { status: 400 }
     );
   }
@@ -231,22 +267,29 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     adminSupabase = createAdminClient();
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Server write client is not configured",
-      },
-      { status: 500 }
-    );
+    return apiFailure({
+      context: "PATCH /api/product-groups/[id]/products admin client setup failed",
+      error,
+      userMessage:
+        "Group products could not be updated because server write access is not configured.",
+      log: { id },
+    });
   }
 
   const { groupId, error: groupError } = await fetchGroupId(adminSupabase, id);
 
   if (groupError || !groupId) {
     const status = groupError?.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: groupError?.message ?? "Group not found" }, { status });
+    return NextResponse.json(
+      {
+        error: groupError?.message ?? "Group not found",
+        userMessage:
+          status === 404
+            ? "This product group could not be found. It may have been deleted."
+            : "The product group could not be loaded before updating products.",
+      },
+      { status }
+    );
   }
 
   if (parsed.data.items) {
@@ -262,22 +305,29 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       .upsert(rows, { onConflict: "group_id,product_id" });
 
     if (error) {
-      console.error("PATCH /api/product-groups/[id]/products reorder failed", {
-        id,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        message: error.message,
+      return apiFailure({
+        context: "PATCH /api/product-groups/[id]/products reorder failed",
+        error,
+        userMessage:
+          "Product order could not be saved. Please refresh and try again, or contact support with the debug ID.",
+        log: {
+          id,
+          itemCount: rows.length,
+        },
       });
-
-      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
   }
 
   if (!parsed.data.product_id) {
-    return NextResponse.json({ error: "product_id is required" }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: "product_id is required",
+        userMessage: "No product was selected. Refresh the page and try again.",
+      },
+      { status: 400 }
+    );
   }
 
   const updatePayload = {
@@ -295,16 +345,19 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;
-    console.error("PATCH /api/product-groups/[id]/products failed", {
-      id,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
-      payload: parsed.data,
+    return apiFailure({
+      context: "PATCH /api/product-groups/[id]/products failed",
+      error,
+      status,
+      userMessage:
+        status === 404
+          ? "This product is no longer attached to the group. Refresh the page."
+          : "The group product could not be updated. Please try again or contact support with the debug ID.",
+      log: {
+        id,
+        payload: parsed.data,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status });
   }
 
   return NextResponse.json(mapProductGroupProductRow(data));
@@ -314,12 +367,21 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const userRole = await getUserRole();
 
   if (!userRole) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      {
+        error: "Not authenticated",
+        userMessage: "Your session expired. Sign in again before removing products.",
+      },
+      { status: 401 }
+    );
   }
 
   if (!canManageProductGroups(userRole.role)) {
     return NextResponse.json(
-      { error: "You do not have permission to manage product groups" },
+      {
+        error: "You do not have permission to manage product groups",
+        userMessage: "Your account does not have permission to remove products from groups.",
+      },
       { status: 403 }
     );
   }
@@ -328,7 +390,13 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const productId = req.nextUrl.searchParams.get("productId") ?? "";
 
   if (!productId) {
-    return NextResponse.json({ error: "productId is required" }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: "productId is required",
+        userMessage: "No product was selected to remove. Refresh the page and try again.",
+      },
+      { status: 400 }
+    );
   }
 
   let adminSupabase: SupabaseClient;
@@ -336,22 +404,29 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
   try {
     adminSupabase = createAdminClient();
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Server write client is not configured",
-      },
-      { status: 500 }
-    );
+    return apiFailure({
+      context: "DELETE /api/product-groups/[id]/products admin client setup failed",
+      error,
+      userMessage:
+        "The product could not be removed because server write access is not configured.",
+      log: { id, productId },
+    });
   }
 
   const { groupId, error: groupError } = await fetchGroupId(adminSupabase, id);
 
   if (groupError || !groupId) {
     const status = groupError?.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: groupError?.message ?? "Group not found" }, { status });
+    return NextResponse.json(
+      {
+        error: groupError?.message ?? "Group not found",
+        userMessage:
+          status === 404
+            ? "This product group could not be found. It may have been deleted."
+            : "The product group could not be loaded before removing the product.",
+      },
+      { status }
+    );
   }
 
   const { error } = await adminSupabase
@@ -361,16 +436,16 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     .eq("product_id", productId);
 
   if (error) {
-    console.error("DELETE /api/product-groups/[id]/products failed", {
-      id,
-      productId,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      message: error.message,
+    return apiFailure({
+      context: "DELETE /api/product-groups/[id]/products failed",
+      error,
+      userMessage:
+        "The product could not be removed from the group. Please try again or contact support with the debug ID.",
+      log: {
+        id,
+        productId,
+      },
     });
-
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

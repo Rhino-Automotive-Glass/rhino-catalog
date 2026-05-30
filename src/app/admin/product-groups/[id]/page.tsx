@@ -35,6 +35,7 @@ import type {
   SubModelListResponse,
 } from "@/lib/types";
 import { productGroupFormSchema, type ProductGroupFormValues } from "@/lib/schemas";
+import { getApiErrorDescription, logAdminActionError, readApiError } from "@/lib/api-error";
 import { getProductDisplayName, getProductDisplayYear } from "@/lib/product-display";
 import { deleteImage } from "@/lib/upload";
 import { Badge } from "@/components/ui/badge";
@@ -236,14 +237,15 @@ export default function EditProductGroupPage({
     setLoading(true);
     try {
       const res = await fetch(`/api/product-groups/${encodeURIComponent(id)}`);
+      if (!res.ok) throw await readApiError(res, "Group not found");
       const json = (await res.json()) as ProductGroup & { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Group not found");
       setGroup(json);
       setPendingImageDeletionUrls([]);
       form.reset(toFormValues(json));
     } catch (error) {
+      logAdminActionError("Failed to load product group in admin", error, { groupId: id });
       toast.error("Failed to load product group", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     } finally {
       setLoading(false);
@@ -256,12 +258,15 @@ export default function EditProductGroupPage({
     setProductsLoading(true);
     try {
       const res = await fetch(`/api/product-groups/${encodeURIComponent(id)}/products`);
+      if (!res.ok) throw await readApiError(res, "Failed to load group products");
       const json = (await res.json()) as ProductGroupProductsResponse & { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Failed to load group products");
       setGroupProducts(Array.isArray(json.data) ? json.data : []);
     } catch (error) {
+      logAdminActionError("Failed to load product group products in admin", error, {
+        groupId: id,
+      });
       toast.error("Failed to load group products", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     } finally {
       setProductsLoading(false);
@@ -274,12 +279,15 @@ export default function EditProductGroupPage({
     setSuggestionsLoading(true);
     try {
       const res = await fetch(`/api/product-groups/${encodeURIComponent(id)}/suggestions`);
+      if (!res.ok) throw await readApiError(res, "Failed to load suggestions");
       const json = (await res.json()) as ApiList<ProductGroupSuggestion>;
-      if (!res.ok) throw new Error(json.error ?? "Failed to load suggestions");
       setSuggestions(Array.isArray(json.data) ? json.data : []);
     } catch (error) {
+      logAdminActionError("Failed to load product group suggestions in admin", error, {
+        groupId: id,
+      });
       toast.error("Failed to load suggestions", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     } finally {
       setSuggestionsLoading(false);
@@ -289,13 +297,14 @@ export default function EditProductGroupPage({
   useEffect(() => {
     fetch("/api/brands")
       .then(async (res) => {
+        if (!res.ok) throw await readApiError(res, "Failed to load brands");
         const json = (await res.json()) as BrandListResponse & { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "Failed to load brands");
         setBrands(Array.isArray(json.brands) ? json.brands : []);
       })
       .catch((error: unknown) => {
+        logAdminActionError("Failed to load product group brands", error);
         toast.error("Failed to load brands", {
-          description: error instanceof Error ? error.message : "Unknown error",
+          description: getApiErrorDescription(error, "Unknown error"),
         });
       });
   }, []);
@@ -303,13 +312,14 @@ export default function EditProductGroupPage({
   useEffect(() => {
     fetch("/api/brands?scope=primary")
       .then(async (res) => {
+        if (!res.ok) throw await readApiError(res, "Failed to load primary brands");
         const json = (await res.json()) as BrandListResponse & { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "Failed to load primary brands");
         setPrimaryBrands(Array.isArray(json.brands) ? json.brands : []);
       })
       .catch((error: unknown) => {
+        logAdminActionError("Failed to load product picker brand filters", error);
         toast.error("Failed to load product brand filters", {
-          description: error instanceof Error ? error.message : "Unknown error",
+          description: getApiErrorDescription(error, "Unknown error"),
         });
       });
   }, []);
@@ -369,11 +379,10 @@ export default function EditProductGroupPage({
         if (pickerSubModelFilter !== "all") params.set("subModel", pickerSubModelFilter);
 
         const res = await fetch(`/api/products?${params}`, { signal });
+        if (!res.ok) throw await readApiError(res, "Failed to load products");
         const json = (await res.json()) as PaginatedResponse<ProductWithSource> & {
           error?: string;
         };
-
-        if (!res.ok) throw new Error(json.error ?? "Failed to load products");
 
         setPickerProducts(Array.isArray(json.data) ? json.data : []);
         setPickerRowCount(typeof json.count === "number" ? json.count : 0);
@@ -382,14 +391,22 @@ export default function EditProductGroupPage({
 
         setPickerProducts([]);
         setPickerRowCount(0);
+        logAdminActionError("Failed to load product picker products", error, {
+          groupId: id,
+          pickerPrimaryBrandFilter,
+          pickerSearch,
+          pickerStatusFilter,
+          pickerSubModelFilter,
+        });
         toast.error("Failed to load products", {
-          description: error instanceof Error ? error.message : "Unknown error",
+          description: getApiErrorDescription(error, "Unknown error"),
         });
       } finally {
         if (!signal?.aborted) setPickerLoading(false);
       }
     },
     [
+      id,
       pickerPage,
       pickerPrimaryBrandFilter,
       pickerSearch,
@@ -427,12 +444,15 @@ export default function EditProductGroupPage({
       signal: controller.signal,
     })
       .then(async (res) => {
+        if (!res.ok) throw await readApiError(res, "Failed to load submodels");
         const json = (await res.json()) as SubModelListResponse & { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "Failed to load submodels");
         setPickerSubModels(Array.isArray(json.subModels) ? json.subModels : []);
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        logAdminActionError("Failed to load product picker submodels", error, {
+          pickerPrimaryBrandFilter,
+        });
         setPickerSubModels([]);
       })
       .finally(() => {
@@ -506,8 +526,7 @@ export default function EditProductGroupPage({
             is_featured: item.is_featured,
           }),
         });
-        const json = (await res.json()) as { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "Failed to add selected products");
+        if (!res.ok) throw await readApiError(res, "Failed to add selected products");
       })
     );
   }
@@ -527,8 +546,8 @@ export default function EditProductGroupPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (!res.ok) throw await readApiError(res, "Save failed");
       const json = (await res.json()) as ProductGroup & { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Save failed");
 
       const savedValues = toFormValues(json);
       const cleanupUrls = pendingImageDeletionUrls.filter(
@@ -540,7 +559,7 @@ export default function EditProductGroupPage({
           try {
             await deleteImage(url);
           } catch (error) {
-            console.warn("Failed to delete superseded group image blob", {
+            logAdminActionError("Failed to delete superseded group image", error, {
               message: error instanceof Error ? error.message : "Unknown error",
               groupId: json.id,
               url,
@@ -565,8 +584,9 @@ export default function EditProductGroupPage({
         router.refresh();
       }
     } catch (error) {
+      logAdminActionError("Failed to save product group in admin", error, { groupId: id });
       toast.error("Failed to save product group", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     } finally {
       setSaving(false);
@@ -580,12 +600,11 @@ export default function EditProductGroupPage({
       const res = await fetch(`/api/product-groups/${encodeURIComponent(group.id)}`, {
         method: "DELETE",
       });
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Delete failed");
+      if (!res.ok) throw await readApiError(res, "Delete failed");
       await Promise.all(
         group.images.map((url) =>
           deleteImage(url).catch((error) => {
-            console.warn("Failed to delete group image blob", {
+            logAdminActionError("Failed to delete product group image after group delete", error, {
               message: error instanceof Error ? error.message : "Unknown error",
               groupId: group.id,
               url,
@@ -596,8 +615,11 @@ export default function EditProductGroupPage({
       toast.success("Product group deleted");
       router.push("/admin/product-groups");
     } catch (error) {
+      logAdminActionError("Failed to delete product group in admin", error, {
+        groupId: group.id,
+      });
       toast.error("Failed to delete product group", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     }
   }
@@ -630,14 +652,17 @@ export default function EditProductGroupPage({
           is_featured: false,
         }),
       });
-      const json = (await res.json()) as ProductGroupProduct & { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Failed to add product");
+      if (!res.ok) throw await readApiError(res, "Failed to add product");
       toast.success("Product added");
       await fetchGroupProducts();
       await fetchSuggestions();
     } catch (error) {
+      logAdminActionError("Failed to add product to group in admin", error, {
+        groupId: id,
+        productId: product.id,
+      });
       toast.error("Failed to add product", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     }
   }
@@ -688,8 +713,7 @@ export default function EditProductGroupPage({
                 is_featured: false,
               }),
             });
-            const json = (await res.json()) as { error?: string };
-            if (!res.ok) throw new Error(json.error ?? "Failed to add selected products");
+            if (!res.ok) throw await readApiError(res, "Failed to add selected products");
           })
         );
         await fetchGroupProducts();
@@ -700,8 +724,12 @@ export default function EditProductGroupPage({
       setProductPickerOpen(false);
       toast.success(`${products.length} product${products.length === 1 ? "" : "s"} added`);
     } catch (error) {
+      logAdminActionError("Failed to add selected products to group in admin", error, {
+        groupId: id,
+        selectedProductIds: products.map((product) => product.id),
+      });
       toast.error("Failed to add selected products", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     }
   }
@@ -721,14 +749,17 @@ export default function EditProductGroupPage({
         `/api/product-groups/${encodeURIComponent(id)}/products?productId=${encodeURIComponent(productId)}`,
         { method: "DELETE" }
       );
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Failed to remove product");
+      if (!res.ok) throw await readApiError(res, "Failed to remove product");
       toast.success("Product removed");
       await fetchGroupProducts();
       await fetchSuggestions();
     } catch (error) {
+      logAdminActionError("Failed to remove product from group in admin", error, {
+        groupId: id,
+        productId,
+      });
       toast.error("Failed to remove product", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     }
   }
@@ -739,8 +770,7 @@ export default function EditProductGroupPage({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ product_id: productId, ...patch }),
     });
-    const json = (await res.json()) as ProductGroupProduct & { error?: string };
-    if (!res.ok) throw new Error(json.error ?? "Update failed");
+    if (!res.ok) throw await readApiError(res, "Update failed");
   }
 
   async function toggleFeatured(item: ProductGroupProduct) {
@@ -765,8 +795,12 @@ export default function EditProductGroupPage({
         )
       );
     } catch (error) {
+      logAdminActionError("Failed to update featured group product in admin", error, {
+        groupId: id,
+        productId: item.product_id,
+      });
       toast.error("Failed to update featured product", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     }
   }
@@ -795,11 +829,13 @@ export default function EditProductGroupPage({
           })),
         }),
       });
-      const json = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Reorder failed");
+      if (!res.ok) throw await readApiError(res, "Reorder failed");
     } catch (error) {
+      logAdminActionError("Failed to reorder group products in admin", error, {
+        groupId: id,
+      });
       toast.error("Failed to reorder products", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
       await fetchGroupProducts();
     }

@@ -34,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getApiErrorDescription, logAdminActionError, readApiError } from "@/lib/api-error";
 
 const statusColors: Record<string, string> = {
   draft: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
@@ -71,17 +72,20 @@ export default function ProductGroupsPage() {
       }
 
       const res = await fetch(`/api/product-groups?${params}`);
+      if (!res.ok) throw await readApiError(res, "Failed to load product groups");
       const json = (await res.json()) as PaginatedResponse<ProductGroup> & { error?: string };
-
-      if (!res.ok) throw new Error(json.error ?? "Failed to load product groups");
 
       setGroups(Array.isArray(json.data) ? json.data : []);
       setRowCount(typeof json.count === "number" ? json.count : 0);
     } catch (error) {
       setGroups([]);
       setRowCount(0);
+      logAdminActionError("Failed to load product groups in admin", error, {
+        search,
+        status,
+      });
       toast.error("Failed to load product groups", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: getApiErrorDescription(error, "Unknown error"),
       });
     } finally {
       setLoading(false);

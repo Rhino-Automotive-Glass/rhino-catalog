@@ -1,3 +1,5 @@
+import { readApiError } from "@/lib/api-error";
+
 /**
  * Upload a file to Vercel Blob via our /api/upload endpoint.
  * Returns the public URL.
@@ -15,8 +17,7 @@ export async function uploadImage(
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "Upload failed");
+    throw await readApiError(res, "Upload failed");
   }
 
   const { url } = await res.json();
@@ -32,7 +33,6 @@ export async function deleteImage(url: string): Promise<void> {
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "Delete failed");
+    throw await readApiError(res, "Delete failed");
   }
 }

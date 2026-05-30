@@ -3,6 +3,7 @@ import { put, del } from "@vercel/blob";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { getUserRole, canEditImages } from "@/lib/roles";
+import { apiFailure } from "@/lib/api-error-response";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,10 @@ export async function POST(req: NextRequest) {
   const userRole = await getUserRole();
   if (!userRole || !canEditImages(userRole.role)) {
     return NextResponse.json(
-      { error: "Not authorized to upload images" },
+      {
+        error: "Not authorized to upload images",
+        userMessage: "You do not have permission to upload product images.",
+      },
       { status: 403 }
     );
   }
@@ -88,19 +92,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: blob.url, pathname: blob.pathname, storage: "blob" });
   } catch (error) {
-    console.error("POST /api/upload failed", {
-      message: error instanceof Error ? error.message : "Unknown error",
+    return apiFailure({
+      context: "POST /api/upload failed",
+      error,
+      userMessage:
+        "The image upload failed. Please try again with a smaller image or contact support with the debug ID.",
     });
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to upload image",
-      },
-      { status: 500 }
-    );
   }
 }
 
@@ -114,7 +111,10 @@ export async function DELETE(req: NextRequest) {
   const userRole = await getUserRole();
   if (!userRole || !canEditImages(userRole.role)) {
     return NextResponse.json(
-      { error: "Not authorized to delete images" },
+      {
+        error: "Not authorized to delete images",
+        userMessage: "You do not have permission to delete product images.",
+      },
       { status: 403 }
     );
   }
@@ -135,6 +135,16 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   }
 
-  await del(url);
-  return NextResponse.json({ success: true });
+  try {
+    await del(url);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return apiFailure({
+      context: "DELETE /api/upload failed",
+      error,
+      userMessage:
+        "The image could not be deleted from storage. The product may still be saved, but the old image may need manual cleanup.",
+      log: { url },
+    });
+  }
 }

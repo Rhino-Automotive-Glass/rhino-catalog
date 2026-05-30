@@ -5,6 +5,7 @@ import { z } from "zod";
 import { productFormSchema, productImagesSchema } from "@/lib/schemas";
 import { getUserRole, canEditProducts, canEditImages } from "@/lib/roles";
 import { mapProductRow, PRODUCT_WITH_SOURCE_INNER_SELECT } from "@/lib/product-query";
+import { apiFailure } from "@/lib/api-error-response";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -39,7 +40,16 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: error.message }, { status });
+    return NextResponse.json(
+      {
+        error: error.message,
+        userMessage:
+          status === 404
+            ? "This product could not be found. It may have been removed or resynced."
+            : "The product could not be loaded. Please try again.",
+      },
+      { status }
+    );
   }
 
   return NextResponse.json(data);
@@ -50,12 +60,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const userRole = await getUserRole();
 
   if (!userRole) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      {
+        error: "Not authenticated",
+        userMessage: "Your session expired. Sign in again before saving this product.",
+      },
+      { status: 401 }
+    );
   }
 
   if (!canEditImages(userRole.role)) {
     return NextResponse.json(
-      { error: "You do not have permission to edit products" },
+      {
+        error: "You do not have permission to edit products",
+        userMessage: "Your account does not have permission to edit products.",
+      },
       { status: 403 }
     );
   }
@@ -68,51 +87,63 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     adminSupabase = createAdminClient();
   } catch (error) {
-    console.error("PATCH /api/products/[id] admin client setup failed", {
-      id,
-      role: userRole.role,
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-
-    return NextResponse.json(
-      {
-        error:
-          "Server write client is not configured. Add SUPABASE_SERVICE_ROLE_KEY to this environment.",
+    return apiFailure({
+      context: "PATCH /api/products/[id] admin client setup failed",
+      error,
+      userMessage:
+        "Product changes could not be saved because server write access is not configured.",
+      log: {
+        id,
+        role: userRole.role,
       },
-      { status: 500 }
-    );
+    });
   }
 
   if (productError) {
     const status = productError.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: productError.message }, { status });
+    return NextResponse.json(
+      {
+        error: productError.message,
+        userMessage:
+          status === 404
+            ? "This product could not be found. It may have been removed or resynced."
+            : "The product could not be loaded before saving. Please try again.",
+      },
+      { status }
+    );
   }
 
   if (!product) {
-    return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    return NextResponse.json(
+      {
+        error: "Product not found",
+        userMessage: "This product could not be found. It may have been removed or resynced.",
+      },
+      { status: 404 }
+    );
   }
 
   if (!Array.isArray(product.images)) {
-    console.error("PATCH /api/products/[id] blocked by legacy images schema", {
-      id,
-      role: userRole.role,
-      imagesType: typeof product.images,
-      imagesValue: product.images,
-    });
-
-    return NextResponse.json(
-      {
-        error:
-          "This database is still using the legacy product images schema. Apply migrations 202603180001_flatten_product_images.sql and 202603250001_limit_product_images_to_1.sql before uploading images.",
+    return apiFailure({
+      context: "PATCH /api/products/[id] blocked by legacy images schema",
+      error: new Error("Legacy product images schema is still active"),
+      userMessage:
+        "Product images cannot be saved until the product image database migration is applied.",
+      log: {
+        id,
+        role: userRole.role,
+        imagesType: typeof product.images,
+        imagesValue: product.images,
       },
-      { status: 500 }
-    );
+    });
   }
 
   if (product.is_hidden) {
     return NextResponse.json(
       {
         error: product.hidden_reason ?? "Hidden products are read-only in this app",
+        userMessage:
+          "This product is hidden by catalog rules and cannot be edited from the admin app.",
       },
       { status: 403 }
     );
@@ -122,7 +153,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   if (!canEditProducts(userRole.role)) {
     if (!body.images) {
       return NextResponse.json(
-        { error: "Editors can only update product images" },
+        {
+          error: "Editors can only update product images",
+          userMessage: "Your role can only update product images.",
+        },
         { status: 403 }
       );
     }
@@ -130,7 +164,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const imagesParsed = productImagesSchema.safeParse(body.images);
     if (!imagesParsed.success) {
       return NextResponse.json(
-        { error: "Invalid images data", details: imagesParsed.error.flatten() },
+        {
+          error: "Invalid images data",
+          userMessage:
+            "The selected image data is invalid. Remove the image and upload it again.",
+          details: imagesParsed.error.flatten(),
+        },
         { status: 400 }
       );
     }
@@ -143,24 +182,31 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       .single();
 
     if (error) {
-      console.error("PATCH /api/products/[id] image update failed", {
-        id,
-        role: userRole.role,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        message: error.message,
-        images: imagesParsed.data,
+      return apiFailure({
+        context: "PATCH /api/products/[id] image update failed",
+        error,
+        userMessage:
+          "The product image could not be saved. Please try again or contact support with the debug ID.",
+        log: {
+          id,
+          role: userRole.role,
+          images: imagesParsed.data,
+        },
       });
-
-      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     const { data, error: fetchError } = await fetchProductByIdentifier(id);
 
     if (fetchError) {
       const status = fetchError.code === "PGRST116" ? 404 : 500;
-      return NextResponse.json({ error: fetchError.message }, { status });
+      return NextResponse.json(
+        {
+          error: fetchError.message,
+          userMessage:
+            "The image was saved, but the updated product could not be reloaded. Refresh the page.",
+        },
+        { status }
+      );
     }
 
     return NextResponse.json(data);
@@ -179,7 +225,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const parsed = editableSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten() },
+      {
+        error: "Validation failed",
+        userMessage:
+          "Some product fields are invalid. Check price, stock, status, and image values.",
+        details: parsed.error.flatten(),
+      },
       { status: 400 }
     );
   }
@@ -189,24 +240,31 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     .eq("id", id);
 
   if (updateError) {
-    console.error("PATCH /api/products/[id] product update failed", {
-      id,
-      role: userRole.role,
-      code: updateError.code,
-      details: updateError.details,
-      hint: updateError.hint,
-      message: updateError.message,
-      payload: parsed.data,
+    return apiFailure({
+      context: "PATCH /api/products/[id] product update failed",
+      error: updateError,
+      userMessage:
+        "The product changes could not be saved. Please try again or contact support with the debug ID.",
+      log: {
+        id,
+        role: userRole.role,
+        payload: parsed.data,
+      },
     });
-
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
   const { data, error } = await fetchProductByIdentifier(id);
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;
-    return NextResponse.json({ error: error.message }, { status });
+    return NextResponse.json(
+      {
+        error: error.message,
+        userMessage:
+          "The product was saved, but the updated product could not be reloaded. Refresh the page.",
+      },
+      { status }
+    );
   }
 
   return NextResponse.json(data);
