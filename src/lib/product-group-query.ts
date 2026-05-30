@@ -4,6 +4,7 @@ import type {
   ProductGroupProduct,
   ProductWithSource,
 } from "@/lib/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapProductRow, PRODUCT_WITH_SOURCE_SELECT } from "@/lib/product-query";
 import { getProductDisplayName, getProductDisplayYear } from "@/lib/product-display";
 
@@ -200,6 +201,56 @@ export function generateProductGroupSlug(
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
+}
+
+export function isUniqueViolation(error: { code?: string; message?: string } | null): boolean {
+  return (
+    error?.code === "23505" ||
+    error?.message?.toLowerCase().includes("duplicate key value") === true
+  );
+}
+
+export async function resolveUniqueProductGroupSlug(
+  supabase: SupabaseClient,
+  baseSlug: string,
+  excludeId?: string
+): Promise<string> {
+  const normalizedBase = baseSlug
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+  if (!normalizedBase) return baseSlug;
+
+  const { data, error } = await supabase
+    .from("product_groups")
+    .select("id, slug")
+    .or(`slug.eq.${normalizedBase},slug.like.${normalizedBase}-%`);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const existingSlugs = new Set(
+    (data ?? [])
+      .filter((row) => row.id !== excludeId)
+      .map((row) => row.slug as string)
+      .filter(Boolean)
+  );
+
+  if (!existingSlugs.has(normalizedBase)) return normalizedBase;
+
+  let suffix = 2;
+  let candidate = `${normalizedBase}-${suffix}`;
+
+  while (existingSlugs.has(candidate)) {
+    suffix += 1;
+    candidate = `${normalizedBase}-${suffix}`;
+  }
+
+  return candidate;
 }
 
 export function getProductGroupSuggestionScore(

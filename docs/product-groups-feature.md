@@ -99,6 +99,11 @@ Slug logic lives in:
 
 - `src/app/admin/product-groups/[id]/page.tsx`
 
+The API is authoritative for uniqueness. Create/update routes resolve hidden slug
+collisions by keeping the generated base when available, otherwise appending a
+numeric suffix such as `ford-transit-2015-2024-2`. This is necessary because
+admins do not edit slugs directly.
+
 ## Images
 
 Group images are optional.
@@ -437,4 +442,3 @@ Additional smoke checks used during development:
 - browser checks for `/catalog/groups/[slug]`
 - API smoke tests against `/api/product-groups`
 - API smoke tests against `/api/upload`
-

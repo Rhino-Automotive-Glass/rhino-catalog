@@ -6,7 +6,9 @@ import { getUserRole, canManageProductGroups } from "@/lib/roles";
 import {
   PRODUCT_GROUP_SELECT,
   buildProductGroupSearchFilter,
+  isUniqueViolation,
   mapProductGroupRow,
+  resolveUniqueProductGroupSlug,
 } from "@/lib/product-group-query";
 import { productGroupCreateSchema } from "@/lib/schemas";
 import type { PaginatedResponse, ProductGroup } from "@/lib/types";
@@ -151,11 +153,43 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data, error } = await adminSupabase
-    .from("product_groups")
-    .insert(cleanPayload(parsed.data))
-    .select(PRODUCT_GROUP_SELECT)
-    .single();
+  const basePayload = cleanPayload(parsed.data);
+  let data = null;
+  let error = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const insertPayload = { ...basePayload };
+
+    if (typeof insertPayload.slug === "string") {
+      try {
+        insertPayload.slug = await resolveUniqueProductGroupSlug(
+          adminSupabase,
+          insertPayload.slug
+        );
+      } catch (slugError) {
+        return NextResponse.json(
+          {
+            error:
+              slugError instanceof Error
+                ? slugError.message
+                : "Failed to generate a unique product group slug",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    const result = await adminSupabase
+      .from("product_groups")
+      .insert(insertPayload)
+      .select(PRODUCT_GROUP_SELECT)
+      .single();
+
+    data = result.data;
+    error = result.error;
+
+    if (!error || !isUniqueViolation(error)) break;
+  }
 
   if (error) {
     console.error("POST /api/product-groups failed", {
@@ -167,6 +201,13 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data) {
+    return NextResponse.json(
+      { error: "Product group was not returned after save" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(mapProductGroupRow(data), { status: 201 });

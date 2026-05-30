@@ -6,7 +6,9 @@ import { getUserRole, canManageProductGroups } from "@/lib/roles";
 import {
   PRODUCT_GROUP_SELECT,
   isUuid,
+  isUniqueViolation,
   mapProductGroupRow,
+  resolveUniqueProductGroupSlug,
 } from "@/lib/product-group-query";
 import { productGroupUpdateSchema } from "@/lib/schemas";
 
@@ -125,12 +127,77 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   }
 
   const matchColumn = isUuid(id) ? "id" : "slug";
-  const { data, error } = await adminSupabase
-    .from("product_groups")
-    .update(cleanPayload(parsed.data))
-    .eq(matchColumn, id)
-    .select(PRODUCT_GROUP_SELECT)
-    .single();
+  const updatePayload = cleanPayload(parsed.data);
+  const requestedSlug =
+    typeof updatePayload.slug === "string" ? updatePayload.slug : undefined;
+  let currentGroupId: string | undefined;
+
+  if (requestedSlug) {
+    const { data: currentGroup, error: currentError } = await fetchGroupByIdentifier(
+      adminSupabase,
+      id
+    );
+
+    if (currentError) {
+      const status = currentError.code === "PGRST116" ? 404 : 500;
+      return NextResponse.json({ error: currentError.message }, { status });
+    }
+
+    currentGroupId = currentGroup?.id;
+
+    try {
+      updatePayload.slug = await resolveUniqueProductGroupSlug(
+        adminSupabase,
+        requestedSlug,
+        currentGroupId
+      );
+    } catch (slugError) {
+      return NextResponse.json(
+        {
+          error:
+            slugError instanceof Error
+              ? slugError.message
+              : "Failed to generate a unique product group slug",
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  let data = null;
+  let error = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await adminSupabase
+      .from("product_groups")
+      .update(updatePayload)
+      .eq(matchColumn, id)
+      .select(PRODUCT_GROUP_SELECT)
+      .single();
+
+    data = result.data;
+    error = result.error;
+
+    if (!error || !isUniqueViolation(error) || !requestedSlug) break;
+
+    try {
+      updatePayload.slug = await resolveUniqueProductGroupSlug(
+        adminSupabase,
+        requestedSlug,
+        currentGroupId
+      );
+    } catch (slugError) {
+      return NextResponse.json(
+        {
+          error:
+            slugError instanceof Error
+              ? slugError.message
+              : "Failed to generate a unique product group slug",
+        },
+        { status: 500 }
+      );
+    }
+  }
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;
@@ -144,6 +211,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     });
 
     return NextResponse.json({ error: error.message }, { status });
+  }
+
+  if (!data) {
+    return NextResponse.json(
+      { error: "Product group was not returned after save" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(mapProductGroupRow(data));
