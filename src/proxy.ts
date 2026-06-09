@@ -1,5 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  clearSupabaseAuthCookies,
+  isRefreshTokenNotFoundError,
+} from '@/lib/supabase-auth'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -26,13 +30,25 @@ export async function proxy(request: NextRequest) {
   )
 
   // Refresh the session — do NOT remove this line
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  const shouldClearAuthCookies = isRefreshTokenNotFoundError(authError)
+
+  if (shouldClearAuthCookies) {
+    supabaseResponse = clearSupabaseAuthCookies(request, supabaseResponse)
+  }
 
   // Redirect unauthenticated users away from protected routes
   if (!user && request.nextUrl.pathname.startsWith('/admin')) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    const redirectResponse = NextResponse.redirect(url)
+    return shouldClearAuthCookies
+      ? clearSupabaseAuthCookies(request, redirectResponse)
+      : redirectResponse
   }
 
   return supabaseResponse

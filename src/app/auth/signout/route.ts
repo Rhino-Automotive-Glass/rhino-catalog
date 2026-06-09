@@ -1,6 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  clearSupabaseAuthCookies,
+  isRefreshTokenNotFoundError,
+} from '@/lib/supabase-auth'
 
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies()
@@ -21,8 +25,14 @@ export async function POST(request: NextRequest) {
     }
   )
 
-  await supabase.auth.signOut()
+  const { error } = await supabase.auth.signOut()
 
   const { origin } = new URL(request.url)
-  return NextResponse.redirect(`${origin}/login`, { status: 302 })
+  const response = NextResponse.redirect(`${origin}/login`, { status: 302 })
+
+  if (isRefreshTokenNotFoundError(error)) {
+    return clearSupabaseAuthCookies(request, response)
+  }
+
+  return response
 }
