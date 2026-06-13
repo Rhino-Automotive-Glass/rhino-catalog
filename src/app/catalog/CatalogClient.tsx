@@ -86,8 +86,11 @@ export default function CatalogPage() {
   const selectedSubModel = searchParams.get("subModel") ?? "";
   const selectedSearch = searchParams.get("search") ?? "";
   const selectedTab = searchParams.get("tab") === "vehicle" ? "vehicle" : "brand";
+  const selectedVehicleBrandId = searchParams.get("vehicleBrand") ?? "";
   const [searchInput, setSearchInput] = useState(selectedSearch);
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId) ?? null;
+  const selectedVehicleBrand =
+    brands.find((brand) => brand.id === selectedVehicleBrandId) ?? null;
   const hasActiveSearch = selectedSearch.trim().length > 0;
   const isVehicleTab = selectedTab === "vehicle";
   const shouldShowProductResults = selectedTab === "brand" && Boolean(selectedBrandId || hasActiveSearch);
@@ -217,10 +220,17 @@ export default function CatalogPage() {
     const controller = new AbortController();
     queueMicrotask(() => setVehicleGroupsLoading(true));
 
-    fetch(
-      `/api/product-groups?scope=catalog&page=${vehicleGroupPage}&pageSize=${GROUP_PAGE_SIZE}`,
-      { signal: controller.signal }
-    )
+    const params = new URLSearchParams({
+      scope: "catalog",
+      page: String(vehicleGroupPage),
+      pageSize: String(GROUP_PAGE_SIZE),
+    });
+
+    if (selectedVehicleBrandId) {
+      params.set("brandId", selectedVehicleBrandId);
+    }
+
+    fetch(`/api/product-groups?${params}`, { signal: controller.signal })
       .then(async (res) => {
         const json = (await res.json()) as PaginatedResponse<ProductGroup> & {
           error?: string;
@@ -246,7 +256,7 @@ export default function CatalogPage() {
     return () => {
       controller.abort();
     };
-  }, [isVehicleTab, vehicleGroupPage]);
+  }, [isVehicleTab, selectedVehicleBrandId, vehicleGroupPage]);
 
   useEffect(() => {
     setSearchInput(selectedSearch);
@@ -314,6 +324,25 @@ export default function CatalogPage() {
     router.push(query ? `${pathname}?${query}` : pathname);
   }
 
+  function updateVehicleBrandFilter(nextBrandId: string) {
+    setVehicleGroupPage(1);
+    setVehicleGroups([]);
+    setVehicleGroupCount(0);
+    setVehicleGroupsLoading(true);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "vehicle");
+
+    if (nextBrandId) {
+      params.set("vehicleBrand", nextBrandId);
+    } else {
+      params.delete("vehicleBrand");
+    }
+
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }
+
   const updateSearchFilter = useEffectEvent((nextSearch: string) => {
     if (selectedTab !== "brand") return;
 
@@ -358,6 +387,7 @@ export default function CatalogPage() {
 
     if (tab === "brand") {
       setVehicleGroupPage(1);
+      params.delete("vehicleBrand");
     }
 
     router.push(`${pathname}?${params.toString()}`);
@@ -424,10 +454,43 @@ export default function CatalogPage() {
         </div>
 
         {isVehicleTab ? (
-          <div className="mb-8 text-center">
-            <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              Vehículos
-            </h1>
+          <div className="mb-8 flex flex-col gap-4 text-center sm:items-center">
+            <div>
+              <h1 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+                Vehículos
+              </h1>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {selectedVehicleBrand
+                  ? `${vehicleGroupCount} vehicle groups for ${selectedVehicleBrand.name}`
+                  : `${vehicleGroupCount} vehicle groups across all brands`}
+              </p>
+            </div>
+
+            <div className="w-full max-w-xs text-left">
+              <label
+                htmlFor="catalog-vehicle-brand-filter"
+                className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Filter by brand
+              </label>
+              <div className="relative">
+                <select
+                  id="catalog-vehicle-brand-filter"
+                  value={selectedVehicleBrandId}
+                  onChange={(event) => updateVehicleBrandFilter(event.target.value)}
+                  disabled={brandsLoading}
+                  className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 pr-11 text-sm text-gray-900 shadow-sm transition-colors focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                >
+                  <option value="">All brands</option>
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+              </div>
+            </div>
           </div>
         ) : selectedBrandId ? (
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
