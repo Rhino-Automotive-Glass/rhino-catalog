@@ -127,10 +127,15 @@ function buildGroupSlug(
     values.year_start && values.year_end
       ? `${values.year_start}-${values.year_end}`
       : values.year_start ?? values.year_end ?? "";
+  const brandName = brand?.name ?? "";
+  const modelPart = values.sub_model ?? values.name;
+  // Avoid doubled brand tokens (e.g. "ford-ford-transit") when the model part
+  // already starts with the brand name, such as name "FORD TRANSIT 83.2".
+  const dedupedModel = brandName
+    ? modelPart.replace(new RegExp(`^${brandName}\\s+`, "i"), "")
+    : modelPart;
   const vehicleSlug = buildSlug(
-    [brand?.name, values.sub_model ?? values.name, years]
-      .filter(Boolean)
-      .join(" ")
+    [brandName, dedupedModel, years].filter(Boolean).join(" ")
   );
 
   return vehicleSlug || buildSlug(values.name);
@@ -949,6 +954,12 @@ export default function EditProductGroupPage({
                 ))}
               </SelectContent>
             </Select>
+            {!selectedBrandId && (
+              <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-500">
+                No brand selected — this group won&apos;t appear in the customer
+                catalog brand filter.
+              </p>
+            )}
           </div>
           <div>
             <Label htmlFor="sub_model" className="mb-1">Vehicle / Submodel</Label>
@@ -962,6 +973,12 @@ export default function EditProductGroupPage({
                 })
               }
             />
+            {!groupSubModel?.trim() && (
+              <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-500">
+                Without a submodel, product suggestions only match on brand and
+                year.
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

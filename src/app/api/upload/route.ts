@@ -135,6 +135,17 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   }
 
+  // In local dev without a blob token we cannot (and should not) delete
+  // remote production blobs. Mirror the POST local fallback and no-op so
+  // image cleanup after a delete doesn't fail. Production keeps the token
+  // and performs the real deletion below.
+  if (!process.env.BLOB_READ_WRITE_TOKEN && localUploadEnabled()) {
+    console.warn(
+      `Skipping remote blob deletion (no BLOB_READ_WRITE_TOKEN in local dev): ${url}`
+    );
+    return NextResponse.json({ success: true, storage: "skipped" });
+  }
+
   try {
     await del(url);
     return NextResponse.json({ success: true });
