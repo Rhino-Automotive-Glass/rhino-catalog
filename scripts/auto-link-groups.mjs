@@ -13,15 +13,23 @@
 // `other` is NOT a match field (descriptor only, e.g. Sprinter Corta/Jumbo/Larga).
 //
 // Usage:
-//   node --env-file=.env.local scripts/auto-link-groups.mjs            # dry-run
-//   node --env-file=.env.local scripts/auto-link-groups.mjs --apply    # write links
+//   node --env-file=.env.local scripts/auto-link-groups.mjs            # dry-run (add only)
+//   node --env-file=.env.local scripts/auto-link-groups.mjs --apply    # write new links
+//   ... --sync                    also prune stale auto links (add + remove)
+//   ... --sync --apply            write adds and deletions
 //   ... --group=<slug-or-id>      restrict to one group
 //   ... --status=published,draft  group statuses to process (default: not archived)
+//
+// Links created by this script are tagged source='auto'. --sync only ever
+// deletes source='auto' rows; manual links added in the admin are never removed.
 
 import { createClient } from "@supabase/supabase-js";
 
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
+// --sync also prunes stale auto-created links (source='auto') that no longer
+// match their group. Manual links (source='manual') are never touched.
+const SYNC = args.includes("--sync");
 const groupArg = (args.find((a) => a.startsWith("--group=")) ?? "").split("=")[1] || null;
 const statusArg = (args.find((a) => a.startsWith("--status=")) ?? "").split("=")[1] || null;
 const statusFilter = statusArg ? statusArg.split(",").map((s) => s.trim()) : null;
@@ -122,54 +130,74 @@ async function main() {
     })
     .filter((p) => p.parte !== "s");
 
-  // Existing memberships
-  const memberships = await fetchAll("product_group_products", "group_id,product_id");
-  const linked = new Map();
+  // Existing memberships (track all + which are auto-created)
+  const memberships = await fetchAll("product_group_products", "group_id,product_id,source");
+  const linked = new Map(); // group_id -> Set(all product_ids)
+  const linkedAuto = new Map(); // group_id -> Set(auto product_ids)
   for (const m of memberships) {
     if (!linked.has(m.group_id)) linked.set(m.group_id, new Set());
     linked.get(m.group_id).add(m.product_id);
+    if (m.source === "auto") {
+      if (!linkedAuto.has(m.group_id)) linkedAuto.set(m.group_id, new Set());
+      linkedAuto.get(m.group_id).add(m.product_id);
+    }
   }
 
-  console.log(`Mode: ${APPLY ? "APPLY (writing)" : "DRY-RUN (no writes)"}`);
+  console.log(`Mode: ${SYNC ? "SYNC" : "ADD"} ${APPLY ? "APPLY (writing)" : "DRY-RUN (no writes)"}`);
   console.log(`Groups: ${groups.length}   Candidate products: ${products.length}\n`);
 
   let totalNew = 0;
+  let totalPrune = 0;
   let skipped = 0;
   const toInsert = [];
+  const toDelete = []; // { group_id, product_id }
   for (const g of groups) {
     const label = [g.sub_model, g.version, g.additional, g.other].filter(Boolean).join(" ");
+    const precise = isPrecise(g);
 
-    // Only precise groups (version or additional set) are auto-linked. Coarse
-    // sub_model-only groups are skipped (they over-match within a family).
-    if (!isPrecise(g)) {
+    // Without --sync, coarse groups are skipped entirely (no add, no prune).
+    // With --sync, coarse groups are still processed so their now-stale auto
+    // links get pruned (their desired set is empty).
+    if (!precise && !SYNC) {
       skipped += 1;
       console.log(`${g.name}  (${label})  SKIPPED [coarse: no version/additional]`);
       continue;
     }
 
     const already = linked.get(g.id) ?? new Set();
-    const matched = products.filter((p) => matches(p, g));
-    const fresh = matched.filter((p) => !already.has(p.id));
-    totalNew += fresh.length;
+    const autoLinks = linkedAuto.get(g.id) ?? new Set();
 
+    // Desired auto-link set: precise groups -> matching products; coarse -> none.
+    const desired = precise ? products.filter((p) => matches(p, g)) : [];
+    const desiredIds = new Set(desired.map((p) => p.id));
+
+    const fresh = desired.filter((p) => !already.has(p.id));
+    const prune = SYNC ? [...autoLinks].filter((pid) => !desiredIds.has(pid)) : [];
+    totalNew += fresh.length;
+    totalPrune += prune.length;
+
+    const tag = precise ? "" : " [coarse]";
     console.log(
-      `${g.name}  (${label} ${g.year_start ?? ""}-${g.year_end ?? ""})\n` +
-        `   matched ${matched.length}, already ${matched.length - fresh.length}, new ${fresh.length}`
+      `${g.name}  (${label} ${g.year_start ?? ""}-${g.year_end ?? ""})${tag}\n` +
+        `   matched ${desired.length}, new ${fresh.length}, prune(auto) ${prune.length}`
     );
-    if (fresh.length) console.log(`   e.g. ${fresh.slice(0, 5).map((p) => p.id.slice(0, 8)).join(", ")}`);
+    if (fresh.length) console.log(`   + ${fresh.slice(0, 5).map((p) => p.id.slice(0, 8)).join(", ")}`);
+    if (prune.length) console.log(`   - ${prune.slice(0, 5).map((id) => id.slice(0, 8)).join(", ")}`);
 
     for (const p of fresh) {
-      toInsert.push({ group_id: g.id, product_id: p.id, sort_order: 0, is_featured: false });
+      toInsert.push({ group_id: g.id, product_id: p.id, sort_order: 0, is_featured: false, source: "auto" });
     }
+    for (const pid of prune) toDelete.push({ group_id: g.id, product_id: pid });
   }
 
-  console.log(`\nPrecise groups linked: ${groups.length - skipped}   Coarse groups skipped: ${skipped}`);
-  console.log(`Total new links: ${totalNew}`);
+  console.log(`\nGroups processed: ${groups.length - skipped}   Coarse skipped: ${skipped}`);
+  console.log(`New links: ${totalNew}   Stale auto links to prune: ${totalPrune}`);
 
   if (!APPLY) {
-    console.log("Dry-run only. Re-run with --apply to write.");
+    console.log(`Dry-run only. Re-run with --apply${SYNC ? "" : " (and --sync to prune)"} to write.`);
     return;
   }
+
   // Idempotent additive upsert in batches.
   for (let i = 0; i < toInsert.length; i += 500) {
     const batch = toInsert.slice(i, i + 500);
@@ -177,8 +205,20 @@ async function main() {
       .from("product_group_products")
       .upsert(batch, { onConflict: "group_id,product_id", ignoreDuplicates: true });
     if (error) throw error;
-    console.log(`  upserted ${Math.min(i + 500, toInsert.length)}/${toInsert.length}`);
+    console.log(`  inserted ${Math.min(i + 500, toInsert.length)}/${toInsert.length}`);
   }
+
+  // Prune stale auto links (only with --sync). Never deletes source='manual'.
+  for (const d of toDelete) {
+    const { error } = await db
+      .from("product_group_products")
+      .delete()
+      .eq("group_id", d.group_id)
+      .eq("product_id", d.product_id)
+      .eq("source", "auto");
+    if (error) throw error;
+  }
+  if (toDelete.length) console.log(`  pruned ${toDelete.length} auto links`);
   console.log("Done.");
 }
 
