@@ -99,7 +99,7 @@ export default function CatalogGroupDetailPage({
                 {group.name}
               </h1>
               <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {[group.sub_model, formatYears(group)].filter(Boolean).join(" / ")}
+                {[[group.sub_model, group.version, group.additional, group.other].filter(Boolean).join(" "), formatYears(group)].filter(Boolean).join(" / ")}
               </p>
               {group.description && (
                 <p className="mt-4 max-w-3xl text-base leading-7 text-gray-600 dark:text-gray-300">

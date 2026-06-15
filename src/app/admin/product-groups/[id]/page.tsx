@@ -87,6 +87,9 @@ const defaultValues: ProductGroupFormValues = {
   brand_id: null,
   model: null,
   sub_model: null,
+  version: null,
+  additional: null,
+  other: null,
   year_start: null,
   year_end: null,
   status: "published",
@@ -102,6 +105,9 @@ function toFormValues(group: ProductGroup): ProductGroupFormValues {
     brand_id: group.brand_id,
     model: group.model,
     sub_model: group.sub_model,
+    version: group.version,
+    additional: group.additional,
+    other: group.other,
     year_start: group.year_start,
     year_end: group.year_end,
     status: group.status,
@@ -976,6 +982,53 @@ export default function EditProductGroupPage({
                 year.
               </p>
             )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Match the product compatibility submodel, e.g. Transit, ProMaster, Sprinter.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="version" className="mb-1">Version (optional)</Label>
+              <Input
+                id="version"
+                value={form.watch("version") ?? ""}
+                onChange={(event) =>
+                  form.setValue("version", event.target.value || null, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                placeholder="e.g. 1500, 314, L3H3"
+              />
+            </div>
+            <div>
+              <Label htmlFor="additional" className="mb-1">Additional (optional)</Label>
+              <Input
+                id="additional"
+                value={form.watch("additional") ?? ""}
+                onChange={(event) =>
+                  form.setValue("additional", event.target.value || null, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                placeholder="e.g. 100.8, 170, 5.0"
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="other" className="mb-1">Other (optional)</Label>
+            <Input
+              id="other"
+              value={form.watch("other") ?? ""}
+              onChange={(event) =>
+                form.setValue("other", event.target.value || null, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              placeholder="Descriptor with no product field yet, e.g. Corta, Jumbo, Ambulancia"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

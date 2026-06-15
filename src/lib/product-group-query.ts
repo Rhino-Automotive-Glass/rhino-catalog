@@ -32,6 +32,9 @@ export const PRODUCT_GROUP_SELECT = `
   brand_id,
   model,
   sub_model,
+  version,
+  additional,
+  other,
   year_start,
   year_end,
   status,
@@ -126,7 +129,7 @@ export function buildProductGroupSearchFilter(search: string): string | null {
     .replace(/_/g, "\\_");
   const pattern = `%${escapedSearch}%`;
 
-  return ["name", "slug", "description", "model", "sub_model"]
+  return ["name", "slug", "description", "model", "sub_model", "version", "additional", "other"]
     .map((column) => `${column}.ilike.${pattern}`)
     .join(",");
 }
@@ -144,6 +147,9 @@ export function mapProductGroupRow(row: RawProductGroupRow): ProductGroup {
     brand: brand ? { id: brand.id, name: brand.name } : null,
     model: row.model,
     sub_model: row.sub_model,
+    version: row.version,
+    additional: row.additional,
+    other: row.other,
     year_start: row.year_start,
     year_end: row.year_end,
     status: row.status,
@@ -174,13 +180,22 @@ export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
-export function buildGroupLabel(group: Pick<ProductGroup, "sub_model" | "year_start" | "year_end">) {
+export function buildGroupLabel(
+  group: Pick<
+    ProductGroup,
+    "sub_model" | "version" | "additional" | "other" | "year_start" | "year_end"
+  >
+) {
   const years =
     group.year_start || group.year_end
       ? `${group.year_start ?? ""}${group.year_start && group.year_end ? "-" : ""}${group.year_end ?? ""}`
       : "";
 
-  return [group.sub_model, years].filter(Boolean).join(" ");
+  const vehicle = [group.sub_model, group.version, group.additional, group.other]
+    .filter(Boolean)
+    .join(" ");
+
+  return [vehicle, years].filter(Boolean).join(" ");
 }
 
 /**

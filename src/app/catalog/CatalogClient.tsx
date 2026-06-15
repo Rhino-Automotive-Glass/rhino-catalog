@@ -668,7 +668,7 @@ export default function CatalogPage() {
                         <Tags className="mt-1 h-5 w-5 shrink-0 text-gray-400 transition-colors group-hover:text-cyan-500" />
                       </div>
                       <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                        {[group.sub_model, formatGroupYears(group)].filter(Boolean).join(" / ")}
+                        {[[group.sub_model, group.version, group.additional, group.other].filter(Boolean).join(" "), formatGroupYears(group)].filter(Boolean).join(" / ")}
                       </p>
                       {group.description && (
                         <p className="mt-3 line-clamp-2 text-sm text-gray-600 dark:text-gray-300">

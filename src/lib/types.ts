@@ -83,6 +83,9 @@ export type ProductGroup = {
   brand: Brand | null;
   model: string | null;
   sub_model: string | null;
+  version: string | null;
+  additional: string | null;
+  other: string | null;
   year_start: number | null;
   year_end: number | null;
   status: ProductGroupStatus;

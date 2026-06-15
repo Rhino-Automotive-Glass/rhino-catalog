@@ -207,7 +207,11 @@ export default function ProductGroupsPage() {
                     </TableCell>
                     <TableCell>{group.brand?.name ?? "Any brand"}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{group.sub_model ?? group.name}</div>
+                      <div className="font-medium">
+                        {[group.sub_model, group.version, group.additional, group.other]
+                          .filter(Boolean)
+                          .join(" ") || group.name}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {formatYears(group)}
                       </div>
