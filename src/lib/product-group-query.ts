@@ -327,3 +327,58 @@ export function getProductGroupSuggestionReason(product: ProductWithSource, grou
 
   return `Matches ${parts.join(" / ")} compatibility for ${displayName}.`;
 }
+
+/**
+ * Strict, exact membership test used by the auto-link script.
+ *
+ * A product belongs in a group when ANY single compatibility item matches the
+ * group on all of its set fields:
+ *   - brand (marca)        : required, exact (normalized)
+ *   - sub_model (subModelo): required, exact (normalized)
+ *   - version              : optional — when the group sets it, the item must
+ *                            match exactly; when null, any version is accepted
+ *   - additional           : optional — same rule as version
+ *
+ * A group is "precise" when it sets version or additional. Year is a hard gate
+ * only for coarse (sub_model-only) groups; precise groups trust the field match
+ * because product source years often pre-date the group's year range.
+ *
+ * `other` is intentionally NOT a match field: it holds descriptors with no
+ * product equivalent yet (e.g. Sprinter Corta/Jumbo/Larga).
+ *
+ * Note: the auto-link script (scripts/auto-link-groups.mjs) mirrors this logic
+ * and additionally skips coarse groups entirely — keep the two in sync.
+ */
+export function isPreciseProductGroup(
+  group: Pick<ProductGroup, "version" | "additional">
+): boolean {
+  return Boolean(group.version || group.additional);
+}
+
+export function productMatchesGroupExact(product: ProductWithSource, group: ProductGroup): boolean {
+  // Confidence threshold: brand AND sub_model must be present and matched.
+  if (!group.brand || !group.sub_model) return false;
+
+  const brand = normalizeText(group.brand.name);
+  const subModel = normalizeText(group.sub_model);
+  const version = group.version ? normalizeText(group.version) : null;
+  const additional = group.additional ? normalizeText(group.additional) : null;
+
+  const items = product.product_codes?.compatibility_data?.items ?? [];
+  const fieldMatch = items.some((item) => {
+    if (normalizeText(item.marca) !== brand) return false;
+    if (normalizeText(item.subModelo) !== subModel) return false;
+    if (version !== null && normalizeText(item.version) !== version) return false;
+    if (additional !== null && normalizeText(item.additional) !== additional) return false;
+    return true;
+  });
+
+  if (!fieldMatch) return false;
+
+  // Year hard gate only for coarse groups; precise groups skip it.
+  if (!isPreciseProductGroup(group) && hasGroupYearFilter(group.year_start, group.year_end)) {
+    if (!hasYearOverlap(product, group.year_start, group.year_end)) return false;
+  }
+
+  return true;
+}
