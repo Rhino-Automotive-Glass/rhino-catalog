@@ -183,12 +183,24 @@ export function buildGroupLabel(group: Pick<ProductGroup, "sub_model" | "year_st
   return [group.sub_model, years].filter(Boolean).join(" ");
 }
 
+/**
+ * Drop a leading brand token from a model/name string so slugs don't double the
+ * brand (e.g. brand "Ford" + "FORD TRANSIT" -> "TRANSIT"). Case-insensitive;
+ * matches the brand as a whole leading word or the entire string.
+ */
+export function stripLeadingBrand(modelPart: string, brandName: string): string {
+  if (!brandName) return modelPart;
+  const escaped = brandName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return modelPart.replace(new RegExp(`^${escaped}(\\s+|$)`, "i"), "");
+}
+
 export function generateProductGroupSlug(
   group: Pick<ProductGroup, "brand" | "name" | "sub_model" | "year_start" | "year_end">
 ): string {
+  const brandName = group.brand?.name ?? "";
   const value = [
-    group.brand?.name,
-    group.sub_model ?? group.name,
+    brandName,
+    stripLeadingBrand(group.sub_model ?? group.name, brandName),
     group.year_start && group.year_end
       ? `${group.year_start}-${group.year_end}`
       : group.year_start ?? group.year_end,

@@ -481,7 +481,9 @@ export default function CatalogPage() {
                   disabled={brandsLoading}
                   className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 pr-11 text-sm text-gray-900 shadow-sm transition-colors focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 >
-                  <option value="">All brands</option>
+                  <option value="">
+                    {brandsLoading ? "Loading brands…" : "All brands"}
+                  </option>
                   {brands.map((brand) => (
                     <option key={brand.id} value={brand.id}>
                       {brand.name}

@@ -38,6 +38,7 @@ import { productGroupFormSchema, type ProductGroupFormValues } from "@/lib/schem
 import { getApiErrorDescription, logAdminActionError, readApiError } from "@/lib/api-error";
 import { getProductDisplayName, getProductDisplayYear } from "@/lib/product-display";
 import { deleteImage } from "@/lib/upload";
+import { stripLeadingBrand } from "@/lib/product-group-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MultiImageUpload } from "@/components/image-upload";
@@ -128,14 +129,10 @@ function buildGroupSlug(
       ? `${values.year_start}-${values.year_end}`
       : values.year_start ?? values.year_end ?? "";
   const brandName = brand?.name ?? "";
-  const modelPart = values.sub_model ?? values.name;
-  // Avoid doubled brand tokens (e.g. "ford-ford-transit") when the model part
-  // already starts with the brand name, such as name "FORD TRANSIT 83.2".
-  const dedupedModel = brandName
-    ? modelPart.replace(new RegExp(`^${brandName}\\s+`, "i"), "")
-    : modelPart;
   const vehicleSlug = buildSlug(
-    [brandName, dedupedModel, years].filter(Boolean).join(" ")
+    [brandName, stripLeadingBrand(values.sub_model ?? values.name, brandName), years]
+      .filter(Boolean)
+      .join(" ")
   );
 
   return vehicleSlug || buildSlug(values.name);
