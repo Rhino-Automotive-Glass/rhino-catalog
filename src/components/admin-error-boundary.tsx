@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, Clipboard, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +47,50 @@ function getExtraErrorFields(error: Error & { digest?: string }) {
   );
 }
 
+function getBrowserDiagnostics() {
+  if (typeof document === "undefined" || typeof navigator === "undefined") {
+    return undefined;
+  }
+
+  const htmlClasses = Array.from(document.documentElement.classList);
+  const translatedPageClass = htmlClasses.find(
+    (className) => className === "translated-ltr" || className === "translated-rtl"
+  );
+  const translatedTextNodeCount = document.querySelectorAll(
+    'font[style*="vertical-align"], font[style*="background-color"]'
+  ).length;
+  const googleTranslateElementDetected = Boolean(
+    document.querySelector(
+      '.goog-te-banner-frame, .goog-te-menu-frame, [class*="goog-te-"], iframe[src*="translate.google"]'
+    )
+  );
+  const adminRoot = document.querySelector<HTMLElement>("[data-admin-root]");
+
+  return {
+    userAgent: navigator.userAgent,
+    languages: Array.from(navigator.languages ?? []),
+    online: navigator.onLine,
+    documentLanguage: document.documentElement.lang || null,
+    documentTranslate: document.documentElement.getAttribute("translate"),
+    adminTranslationProtection: {
+      present: Boolean(adminRoot),
+      translate: adminRoot?.getAttribute("translate") ?? null,
+      notranslateClass: adminRoot?.classList.contains("notranslate") ?? false,
+    },
+    htmlClasses,
+    translation: {
+      detected: Boolean(
+        translatedPageClass ||
+          googleTranslateElementDetected ||
+          translatedTextNodeCount > 0
+      ),
+      translatedPageClass: translatedPageClass ?? null,
+      googleTranslateElementDetected,
+      translatedTextNodeCount,
+    },
+  };
+}
+
 function getErrorDetails(error: Error & { digest?: string }, areaLabel: string) {
   const details = {
     timestamp: new Date().toISOString(),
@@ -56,6 +100,7 @@ function getErrorDetails(error: Error & { digest?: string }, areaLabel: string) 
     message: error.message || "No error message was provided.",
     digest: error.digest,
     extra: getExtraErrorFields(error),
+    browser: getBrowserDiagnostics(),
     stack: error.stack,
   };
 
@@ -68,6 +113,28 @@ function getErrorDetails(error: Error & { digest?: string }, areaLabel: string) 
   return `${serialized.slice(0, MAX_DETAIL_LENGTH)}\n...truncated`;
 }
 
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+
+  try {
+    const copied = document.execCommand("copy");
+    if (!copied) throw new Error("Browser rejected the copy command");
+  } finally {
+    textArea.remove();
+  }
+}
+
 export function AdminErrorBoundary({
   areaLabel = "Admin",
   backHref = "/admin/products",
@@ -75,6 +142,7 @@ export function AdminErrorBoundary({
   error,
   reset,
 }: AdminErrorBoundaryProps) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const reloadRecommended = isChunkLoadError(error);
 
   useEffect(() => {
@@ -86,10 +154,27 @@ export function AdminErrorBoundary({
     });
   }, [areaLabel, error]);
 
-  const errorDetails = getErrorDetails(error, areaLabel);
+  const errorDetails = useMemo(() => getErrorDetails(error, areaLabel), [areaLabel, error]);
+  const translationDetected = useMemo(() => {
+    const diagnostics = getBrowserDiagnostics();
+    return diagnostics?.translation.detected ?? false;
+  }, []);
+
+  async function handleCopyDetails() {
+    try {
+      await copyText(errorDetails);
+      setCopyStatus("copied");
+    } catch (copyError) {
+      console.error("Failed to copy admin error details", copyError);
+      setCopyStatus("failed");
+    }
+  }
 
   return (
-    <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center px-4">
+    <div
+      className="notranslate mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center px-4"
+      translate="no"
+    >
       <div className="card w-full p-6 sm:p-8">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
           <AlertTriangle className="h-6 w-6" />
@@ -98,7 +183,9 @@ export function AdminErrorBoundary({
           {areaLabel} page could not load
         </h1>
         <p className="mx-auto mt-2 max-w-2xl text-center text-sm text-muted-foreground">
-          {reloadRecommended
+          {translationDetected
+            ? "Browser translation was detected and may have changed the page structure. Disable translation for this site, then refresh the page."
+            : reloadRecommended
             ? "This looks like an outdated browser bundle after a deployment. Refreshing the page should load the latest admin code."
             : "Something failed while rendering this page. The technical details below can be shared for debugging."}
         </p>
@@ -118,6 +205,21 @@ export function AdminErrorBoundary({
             {errorDetails}
           </pre>
         </details>
+        <div className="mt-3 flex flex-col items-center gap-2">
+          <Button type="button" variant="outline" onClick={handleCopyDetails}>
+            {copyStatus === "copied" ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Clipboard className="h-4 w-4" />
+            )}
+            {copyStatus === "copied" ? "Technical details copied" : "Copy technical details"}
+          </Button>
+          {copyStatus === "failed" && (
+            <p role="status" className="text-xs text-destructive">
+              Copy failed. Select the technical details manually.
+            </p>
+          )}
+        </div>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <Button type="button" onClick={() => window.location.reload()}>
             <RefreshCw className="h-4 w-4" />

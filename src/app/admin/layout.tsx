@@ -14,7 +14,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       : undefined;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+    <div
+      data-admin-root
+      className="notranslate min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col"
+      translate="no"
+    >
       <AppHeader area="admin" activeAdminSection={activeAdminSection} />
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1">
         {children}
