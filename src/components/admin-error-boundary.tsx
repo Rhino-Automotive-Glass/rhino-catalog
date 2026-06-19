@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, Clipboard, RefreshCw } from "lucide-react";
 
@@ -91,7 +91,11 @@ function getBrowserDiagnostics() {
   };
 }
 
-function getErrorDetails(error: Error & { digest?: string }, areaLabel: string) {
+function getErrorDetails(
+  error: Error & { digest?: string },
+  areaLabel: string,
+  browser = getBrowserDiagnostics()
+) {
   const details = {
     timestamp: new Date().toISOString(),
     path: typeof window === "undefined" ? undefined : window.location.href,
@@ -100,7 +104,7 @@ function getErrorDetails(error: Error & { digest?: string }, areaLabel: string) 
     message: error.message || "No error message was provided.",
     digest: error.digest,
     extra: getExtraErrorFields(error),
-    browser: getBrowserDiagnostics(),
+    browser,
     stack: error.stack,
   };
 
@@ -114,25 +118,30 @@ function getErrorDetails(error: Error & { digest?: string }, areaLabel: string) 
 }
 
 async function copyText(value: string) {
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  textArea.setSelectionRange(0, textArea.value.length);
+
+  try {
+    const copied = document.execCommand("copy");
+    if (copied) return;
+  } finally {
+    textArea.remove();
+  }
+
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(value);
     return;
   }
 
-  const textArea = document.createElement("textarea");
-  textArea.value = value;
-  textArea.setAttribute("readonly", "");
-  textArea.style.position = "fixed";
-  textArea.style.opacity = "0";
-  document.body.appendChild(textArea);
-  textArea.select();
-
-  try {
-    const copied = document.execCommand("copy");
-    if (!copied) throw new Error("Browser rejected the copy command");
-  } finally {
-    textArea.remove();
-  }
+  throw new Error("Browser rejected the copy command");
 }
 
 export function AdminErrorBoundary({
@@ -143,22 +152,32 @@ export function AdminErrorBoundary({
   reset,
 }: AdminErrorBoundaryProps) {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [errorDetails, setErrorDetails] = useState(() => getErrorDetails(error, areaLabel));
+  const [translationDetected, setTranslationDetected] = useState(false);
   const reloadRecommended = isChunkLoadError(error);
 
   useEffect(() => {
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (cancelled) return;
+
+      const browserDiagnostics = getBrowserDiagnostics();
+      setErrorDetails(getErrorDetails(error, areaLabel, browserDiagnostics));
+      setTranslationDetected(browserDiagnostics?.translation.detected ?? false);
+    });
+
     console.error(`${areaLabel} route failed to render`, {
       digest: error.digest,
       message: error.message,
       name: error.name,
       stack: error.stack,
     });
-  }, [areaLabel, error]);
 
-  const errorDetails = useMemo(() => getErrorDetails(error, areaLabel), [areaLabel, error]);
-  const translationDetected = useMemo(() => {
-    const diagnostics = getBrowserDiagnostics();
-    return diagnostics?.translation.detected ?? false;
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [areaLabel, error]);
 
   async function handleCopyDetails() {
     try {
