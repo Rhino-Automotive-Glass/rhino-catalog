@@ -13,6 +13,7 @@ import {
 import { productGroupCreateSchema } from "@/lib/schemas";
 import type { PaginatedResponse, ProductGroup } from "@/lib/types";
 import { apiFailure } from "@/lib/api-error-response";
+import { parseIntParam } from "@/lib/query-params";
 
 function cleanPayload<T extends Record<string, unknown>>(payload: T) {
   return Object.fromEntries(
@@ -22,8 +23,8 @@ function cleanPayload<T extends Record<string, unknown>>(payload: T) {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? 50)));
+  const page = parseIntParam(searchParams.get("page"), { fallback: 1 });
+  const pageSize = parseIntParam(searchParams.get("pageSize"), { fallback: 50, max: 100 });
   const status = searchParams.get("status") ?? "";
   const scope = searchParams.get("scope") ?? "admin";
   const search = searchParams.get("search")?.trim() ?? "";

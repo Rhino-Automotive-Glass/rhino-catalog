@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { getUserRole, canEditImages } from "@/lib/roles";
 import { apiFailure } from "@/lib/api-error-response";
 
@@ -10,12 +10,18 @@ export const runtime = "nodejs";
 const LOCAL_UPLOAD_PREFIX = "/uploads/products";
 
 function sanitizePathPart(value: string): string {
-  return value
+  const sanitized = value
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "upload";
+    .slice(0, 80);
+
+  // "." and ".." survive the character filter above (dots are allowed so file
+  // extensions work) and would escape the upload directory once joined.
+  if (!sanitized || /^\.+$/.test(sanitized)) return "upload";
+
+  return sanitized;
 }
 
 function sanitizeFolder(folder: string): string {
@@ -24,6 +30,25 @@ function sanitizeFolder(folder: string): string {
     .map(sanitizePathPart)
     .filter(Boolean)
     .join("/");
+}
+
+/**
+ * Resolve a `/uploads/products/...` URL to an on-disk path, or null when the
+ * result would land outside the local uploads directory.
+ *
+ * The URL here comes straight from the client, so prefix-matching the string is
+ * not enough \u2014 "/uploads/products/../../x" passes that test but resolves out of
+ * the tree. Compare the resolved path instead.
+ */
+function resolveLocalUploadPath(url: string): string | null {
+  const uploadsRoot = resolve(join(process.cwd(), "public", LOCAL_UPLOAD_PREFIX));
+  const resolved = resolve(join(process.cwd(), "public", url));
+
+  if (resolved !== uploadsRoot && !resolved.startsWith(`${uploadsRoot}${sep}`)) {
+    return null;
+  }
+
+  return resolved;
 }
 
 function localUploadEnabled(): boolean {
@@ -69,8 +94,22 @@ export async function POST(req: NextRequest) {
         : "";
       const filenameBase = filename.replace(/\.[^.]+$/, "");
       const localFilename = `${filenameBase}-${crypto.randomUUID()}${fileExtension}`;
-      const uploadDirectory = join(process.cwd(), "public", LOCAL_UPLOAD_PREFIX, folder);
       const publicPath = `${LOCAL_UPLOAD_PREFIX}/${folder}/${localFilename}`;
+      // Defence in depth: sanitizePathPart already rejects dot-only segments,
+      // but the write target is re-checked against the uploads root.
+      const targetPath = resolveLocalUploadPath(publicPath);
+
+      if (!targetPath) {
+        return NextResponse.json(
+          {
+            error: "Invalid local upload path",
+            userMessage: "That file name is not valid. Rename the file and try again.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const uploadDirectory = join(process.cwd(), "public", LOCAL_UPLOAD_PREFIX, folder);
 
       await mkdir(uploadDirectory, { recursive: true });
       await writeFile(
@@ -119,18 +158,42 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
-  const { url } = await req.json();
+  let body: unknown;
 
-  if (!url) {
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Invalid JSON body",
+        userMessage: "The delete request was malformed. Refresh the page and try again.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const url =
+    typeof body === "object" && body && "url" in body
+      ? (body as { url: unknown }).url
+      : undefined;
+
+  if (!url || typeof url !== "string") {
     return NextResponse.json({ error: "No URL provided" }, { status: 400 });
   }
 
-  if (
-    typeof url === "string" &&
-    url.startsWith(`${LOCAL_UPLOAD_PREFIX}/`) &&
-    localUploadEnabled()
-  ) {
-    const localPath = join(process.cwd(), "public", url);
+  if (url.startsWith(`${LOCAL_UPLOAD_PREFIX}/`) && localUploadEnabled()) {
+    const localPath = resolveLocalUploadPath(url);
+
+    if (!localPath) {
+      return NextResponse.json(
+        {
+          error: "Invalid local upload path",
+          userMessage: "That image path is not valid and was not deleted.",
+        },
+        { status: 400 }
+      );
+    }
+
     await unlink(localPath).catch(() => {});
     return NextResponse.json({ success: true });
   }

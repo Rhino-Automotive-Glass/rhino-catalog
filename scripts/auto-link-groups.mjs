@@ -9,7 +9,9 @@
 //   sub_model (subModelo) required, exact (normalized)
 //   version               optional - exact when the group sets it, else wildcard
 //   additional            optional - exact when the group sets it, else wildcard
-// Year is a hard gate: when the group has a year range, the product must overlap.
+// Year is a hard gate for coarse groups: when the group has a year range, the
+// product must overlap. Year extraction is shared with the app via
+// src/lib/product-years.mjs.
 // `other` is NOT a match field (descriptor only, e.g. Sprinter Corta/Jumbo/Larga).
 //
 // Usage:
@@ -24,6 +26,7 @@
 // deletes source='auto' rows; manual links added in the admin are never removed.
 
 import { createClient } from "@supabase/supabase-js";
+import { hasProductYearOverlap } from "../src/lib/product-years.mjs";
 
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
@@ -44,16 +47,10 @@ const db = createClient(url, serviceKey, { auth: { autoRefreshToken: false, pers
 
 // --- match helpers (mirror of src/lib/product-group-query.ts) ---
 const norm = (s) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
-const parseYears = (s) => (String(s ?? "").match(/\b(?:19|20)\d{2}\b/g) ?? []).map(Number);
 
-function yearOverlap(product, ys, ye) {
-  if (ys == null && ye == null) return true;
-  const years = product.years;
-  if (years.length === 0) return true; // no year evidence -> not excluded (matches app behavior)
-  const start = ys ?? ye;
-  const end = ye ?? ys;
-  return years.some((y) => y >= start && y <= end);
-}
+// Year overlap comes from src/lib/product-years.mjs, which the app imports too,
+// so the two can no longer drift apart.
+const yearOverlap = (product, ys, ye) => hasProductYearOverlap(product.productCode, ys, ye);
 
 const isPrecise = (group) => Boolean(group.version || group.additional);
 
@@ -116,16 +113,11 @@ async function main() {
     .map((row) => {
       const pc = Array.isArray(row.product_codes) ? row.product_codes[0] : row.product_codes;
       const items = pc?.compatibility_data?.items ?? [];
-      const years = [
-        ...parseYears(pc?.compatibility_data?.generated),
-        ...parseYears(pc?.description_data?.generated),
-        ...items.flatMap((it) => parseYears(it.modelo)),
-      ];
       return {
         id: row.id,
         parte: String(pc?.product_code_data?.parte ?? "").trim().toLowerCase(),
         items,
-        years,
+        productCode: pc,
       };
     })
     .filter((p) => p.parte !== "s");

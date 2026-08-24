@@ -174,10 +174,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       );
     }
 
+    // Match on the resolved UUID: `id` may be a product code, which is not a
+    // valid value for products.id.
     const { error } = await adminSupabase
       .from("products")
       .update({ images: imagesParsed.data })
-      .eq("id", id)
+      .eq("id", product.id)
       .select("id")
       .single();
 
@@ -195,7 +197,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       });
     }
 
-    const { data, error: fetchError } = await fetchProductByIdentifier(id);
+    const { data, error: fetchError } = await fetchProductByIdentifier(product.id);
 
     if (fetchError) {
       const status = fetchError.code === "PGRST116" ? 404 : 500;
@@ -237,7 +239,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const { error: updateError } = await adminSupabase
     .from("products")
     .update(parsed.data)
-    .eq("id", id);
+    .eq("id", product.id);
 
   if (updateError) {
     return apiFailure({
@@ -253,7 +255,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     });
   }
 
-  const { data, error } = await fetchProductByIdentifier(id);
+  const { data, error } = await fetchProductByIdentifier(product.id);
 
   if (error) {
     const status = error.code === "PGRST116" ? 404 : 500;

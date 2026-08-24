@@ -16,6 +16,7 @@ import {
 } from "@/lib/product-query";
 import type { ProductGroupSuggestion } from "@/lib/types";
 import { apiFailure } from "@/lib/api-error-response";
+import { parseIntParam } from "@/lib/query-params";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   }
 
   const { id } = await ctx.params;
-  const limit = Math.min(50, Math.max(1, Number(req.nextUrl.searchParams.get("limit") ?? 20)));
+  const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), { fallback: 20, max: 50 });
   const groupQuery = supabase.from("product_groups").select(PRODUCT_GROUP_SELECT);
   const { data: groupData, error: groupError } = await (isUuid(id)
     ? groupQuery.eq("id", id)

@@ -132,6 +132,7 @@ export default function ProductsPage() {
 
   const [brands, setBrands] = useState<Brand[]>([]);
   const [productSearch, setProductSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [primaryBrandFilter, setPrimaryBrandFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [subModels, setSubModels] = useState<string[]>([]);
@@ -159,42 +160,70 @@ export default function ProductsPage() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: String(pagination.pageIndex + 1),
-        pageSize: String(pagination.pageSize),
-        visibility: "all",
-      });
-      if (productSearch.trim()) params.set("search", productSearch.trim());
-      if (primaryBrandFilter !== "all") params.set("primaryBrandId", primaryBrandFilter);
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      if (subModelFilter !== "all") params.set("subModel", subModelFilter);
+  // Debounce the search box so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const trimmed = productSearch.trim();
 
-      const res = await fetch(`/api/products?${params}`);
-      if (!res.ok) throw await readApiError(res, "Failed to load products");
-      const json: PaginatedResponse<ProductWithSource> = await res.json();
+    if (trimmed === debouncedSearch) return undefined;
 
-      setData(json.data);
-      setRowCount(json.count);
-    } catch (err) {
-      logAdminActionError("Failed to load products in admin", err, {
-        primaryBrandFilter,
-        productSearch,
-        statusFilter,
-        subModelFilter,
-      });
-      toast.error("Failed to load products", {
-        description: getApiErrorDescription(err, "Unknown error"),
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [pagination.pageIndex, pagination.pageSize, primaryBrandFilter, productSearch, statusFilter, subModelFilter]);
+    const timeoutId = window.setTimeout(() => setDebouncedSearch(trimmed), 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [productSearch, debouncedSearch]);
+
+  const fetchProducts = useCallback(
+    async (signal: AbortSignal) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(pagination.pageIndex + 1),
+          pageSize: String(pagination.pageSize),
+          visibility: "all",
+        });
+        if (debouncedSearch) params.set("search", debouncedSearch);
+        if (primaryBrandFilter !== "all") params.set("primaryBrandId", primaryBrandFilter);
+        if (statusFilter !== "all") params.set("status", statusFilter);
+        if (subModelFilter !== "all") params.set("subModel", subModelFilter);
+
+        const res = await fetch(`/api/products?${params}`, { signal });
+        if (!res.ok) throw await readApiError(res, "Failed to load products");
+        const json: PaginatedResponse<ProductWithSource> = await res.json();
+
+        setData(json.data);
+        setRowCount(json.count);
+      } catch (err) {
+        // A superseded request must not clear the newer one's results.
+        if (err instanceof DOMException && err.name === "AbortError") return;
+
+        logAdminActionError("Failed to load products in admin", err, {
+          primaryBrandFilter,
+          productSearch: debouncedSearch,
+          statusFilter,
+          subModelFilter,
+        });
+        toast.error("Failed to load products", {
+          description: getApiErrorDescription(err, "Unknown error"),
+        });
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [
+      pagination.pageIndex,
+      pagination.pageSize,
+      primaryBrandFilter,
+      debouncedSearch,
+      statusFilter,
+      subModelFilter,
+    ]
+  );
 
   useEffect(() => {
-    fetchProducts();
+    const controller = new AbortController();
+
+    fetchProducts(controller.signal);
+
+    return () => controller.abort();
   }, [fetchProducts]);
 
   useEffect(() => {

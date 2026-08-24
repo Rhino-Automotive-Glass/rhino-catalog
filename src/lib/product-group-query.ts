@@ -6,7 +6,8 @@ import type {
 } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapProductRow, PRODUCT_WITH_SOURCE_SELECT } from "@/lib/product-query";
-import { getProductDisplayName, getProductDisplayYear } from "@/lib/product-display";
+import { getProductDisplayName } from "@/lib/product-display";
+import { hasProductYearOverlap } from "@/lib/product-years.mjs";
 
 type RawBrand = {
   id: string;
@@ -84,30 +85,12 @@ function textMatches(candidate: string | null | undefined, desired: string): boo
   );
 }
 
-function parseYearRange(value: string | null): number[] {
-  const years = value?.match(/\b(?:19|20)\d{2}\b/g) ?? [];
-  return years.map((year) => Number(year)).filter(Number.isFinite);
-}
-
 function hasYearOverlap(
   product: ProductWithSource,
   yearStart: number | null,
   yearEnd: number | null
 ): boolean {
-  if (yearStart === null && yearEnd === null) return true;
-
-  const years = [
-    ...parseYearRange(getProductDisplayYear(product)),
-    ...parseYearRange(product.product_codes?.compatibility_data?.generated ?? null),
-    ...parseYearRange(product.product_codes?.description_data?.generated ?? null),
-  ];
-
-  if (years.length === 0) return true;
-
-  const start = yearStart ?? yearEnd;
-  const end = yearEnd ?? yearStart;
-
-  return years.some((year) => year >= Number(start) && year <= Number(end));
+  return hasProductYearOverlap(product.product_codes, yearStart, yearEnd);
 }
 
 function hasGroupYearFilter(yearStart: number | null, yearEnd: number | null): boolean {
