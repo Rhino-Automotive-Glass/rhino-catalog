@@ -37,8 +37,8 @@ The new model fixes that by making brand membership relational and explicit.
 
 The schema changes were introduced in:
 
-- `supabase/migrations/202603170001_normalize_product_brands.sql`
-- `supabase/migrations/202603170002_brand_access_policies.sql`
+- `supabase/archive/migrations/202603170001_normalize_product_brands.sql`
+- `supabase/archive/migrations/202603170002_brand_access_policies.sql`
 
 ### `brands`
 
@@ -166,7 +166,7 @@ After introducing `brands` and `product_brands`, the app also needed access poli
 
 That was added in:
 
-- `supabase/migrations/202603170002_brand_access_policies.sql`
+- `supabase/archive/migrations/202603170002_brand_access_policies.sql`
 
 This migration:
 

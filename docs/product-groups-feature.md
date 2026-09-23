@@ -54,12 +54,12 @@ Product membership must stay relational. Do not store product IDs in JSON arrays
 
 Main migrations:
 
-- `supabase/migrations/202605240001_product_groups.sql`
-- `supabase/migrations/202605240002_product_group_access_policies.sql`
-- `supabase/migrations/202605240003_product_group_images.sql`
-- `supabase/migrations/202605240004_product_group_description.sql`
-- `supabase/migrations/202605260001_make_product_group_images_optional.sql`
-- `supabase/migrations/202605270001_make_product_group_model_optional.sql`
+- `supabase/archive/migrations/202605240001_product_groups.sql`
+- `supabase/archive/migrations/202605240002_product_group_access_policies.sql`
+- `supabase/archive/migrations/202605240003_product_group_images.sql`
+- `supabase/archive/migrations/202605240004_product_group_description.sql`
+- `supabase/archive/migrations/202605260001_make_product_group_images_optional.sql`
+- `supabase/archive/migrations/202605270001_make_product_group_model_optional.sql`
 
 Tables:
 
@@ -392,6 +392,8 @@ Product Groups may read compatibility data for suggestions, but they do not writ
 Some migrations in this feature were applied remotely through the Supabase Management API because `supabase db push` was blocked by remote migration-history entries that were not present locally.
 
 Future maintainers should be careful before running migration repair commands. Prefer understanding remote migration history first.
+
+These historical SQL files now live under `supabase/archive/migrations/` and are not active CLI migrations. See `supabase/README.md` before any database deployment.
 
 The local development upload fallback depends on app-local paths under:
 

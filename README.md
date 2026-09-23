@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Shared database
+
+Before changing or applying Supabase SQL, read [migration history and deployment rules](supabase/README.md). This app shares one production database with five other Rhino repositories; archived SQL under `supabase/archive/migrations/` must not be batch-applied.
+
 ## Getting Started
 
 First, run the development server:
