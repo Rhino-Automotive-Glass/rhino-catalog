@@ -1,18 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import type { BrandListResponse } from "@/lib/types";
-import { mapProductRow, PRODUCT_WITH_SOURCE_INNER_SELECT } from "@/lib/product-query";
+import type { BrandListResponse, ProductCode } from "@/lib/types";
+import { isProductHidden } from "@/lib/product-visibility";
 
 type RawBrand = {
   id: string;
   name: string;
 };
 
+type BrandCountRow = {
+  primary_brand_id: string | null;
+  primary_brand: RawBrand | RawBrand[] | null;
+  product_brands: { brand: RawBrand | RawBrand[] | null }[] | null;
+  product_codes: { product_code_data?: { parte?: unknown } } | null;
+};
+
+/**
+ * Counting products per brand only needs the brand relations plus the one field
+ * the hidden rule reads (product_code_data.parte).
+ *
+ * The full product select drags along description_data and compatibility_data,
+ * which are large JSON blobs — roughly 1.27 MB per 1000 rows versus 396 KB for
+ * this one, on a query that walks the whole table.
+ */
+const BRAND_COUNT_SELECT = `
+  primary_brand_id,
+  primary_brand:brands!products_primary_brand_id_fkey (
+    id,
+    name
+  ),
+  product_brands:product_brands!product_brands_product_id_fkey (
+    brand:brands!product_brands_brand_id_fkey (
+      id,
+      name
+    )
+  ),
+  product_codes!products_product_code_id_fkey!inner (
+    product_code_data
+  )
+`;
+
 const CATALOG_INCLUDED_BRANDS = ["Nissan"];
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
   return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function dedupeById(brands: RawBrand[]): RawBrand[] {
+  const seen = new Set<string>();
+
+  return brands.filter((brand) => {
+    if (seen.has(brand.id)) return false;
+    seen.add(brand.id);
+    return true;
+  });
 }
 
 /**
@@ -32,7 +74,7 @@ export async function GET(req: NextRequest) {
     while (true) {
       const { data, error } = await supabase
         .from("products")
-        .select(PRODUCT_WITH_SOURCE_INNER_SELECT)
+        .select(BRAND_COUNT_SELECT)
         .order("created_at", { ascending: false })
         .range(from, from + batchSize - 1);
 
@@ -55,17 +97,21 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      for (const row of data ?? []) {
-        const product = mapProductRow(row);
+      for (const row of (data ?? []) as unknown as BrandCountRow[]) {
+        if (isProductHidden(row.product_codes as ProductCode | null)) continue;
 
-        if (product.is_hidden) continue;
-
+        const primaryBrand = unwrapRelation(row.primary_brand);
         const relatedBrands = [
-          ...(product.primary_brand ? [product.primary_brand] : []),
-          ...product.additional_brands,
+          ...(primaryBrand ? [primaryBrand] : []),
+          ...(row.product_brands ?? [])
+            .map((item) => unwrapRelation(item.brand))
+            .filter((brand): brand is RawBrand => Boolean(brand))
+            // A brand that is both primary and a membership row must not be
+            // counted twice for the same product.
+            .filter((brand) => brand.id !== primaryBrand?.id),
         ];
 
-        for (const brand of relatedBrands) {
+        for (const brand of dedupeById(relatedBrands)) {
           const current = brandCounts.get(brand.id);
           if (current) {
             current.productCount += 1;

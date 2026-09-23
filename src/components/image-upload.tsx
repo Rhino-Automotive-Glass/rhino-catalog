@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 import Image from "next/image";
@@ -8,6 +8,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { uploadImage, deleteImage } from "@/lib/upload";
 import { getCatalogImageSrc } from "@/lib/catalog-image";
+import { commitUploadedImage, removeImageAt } from "@/lib/image-upload-state.mjs";
 
 type SingleImageUploadProps = {
   /** Current image URL or undefined */
@@ -160,45 +161,88 @@ export function MultiImageUpload({
   max = 3,
 }: MultiImageUploadProps) {
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const operationRef = useRef(false);
+  const valueRef = useRef(value);
+
+  useLayoutEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const handleAdd = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      if (operationRef.current) {
+        e.target.value = "";
+        return;
+      }
+
+      if (valueRef.current.length >= max) {
+        toast.error(`${label} allows at most ${max} image${max === 1 ? "" : "s"}`);
+        e.target.value = "";
+        return;
+      }
+
+      operationRef.current = true;
       setUploading(true);
       try {
         const url = await uploadImage(file, folder);
-        onChange([...value, url]);
+        const result = commitUploadedImage(valueRef.current, url, max);
+
+        if (!result.accepted) {
+          await deleteImage(result.rejectedUrl).catch(() => {});
+          toast.error(`${label} allows at most ${max} image${max === 1 ? "" : "s"}`);
+          return;
+        }
+
+        valueRef.current = result.urls;
+        onChange(result.urls);
         toast.success(`${label} image added`);
       } catch (err) {
         toast.error(`Failed to upload`, {
           description: err instanceof Error ? err.message : "Unknown error",
         });
       } finally {
+        operationRef.current = false;
         setUploading(false);
         e.target.value = "";
       }
     },
-    [value, folder, label, onChange]
+    [folder, label, max, onChange]
   );
 
   const handleRemove = useCallback(
     async (index: number) => {
-      const url = value[index];
+      if (operationRef.current) return;
 
-      if (onQueueDelete) {
-        onQueueDelete(url);
-      } else {
-        try {
-          await deleteImage(url);
-        } catch {
-          // Continue removing from state even if blob delete fails
+      const result = removeImageAt(valueRef.current, index);
+
+      if (!result) return;
+
+      operationRef.current = true;
+      setRemoving(true);
+
+      try {
+        if (onQueueDelete) {
+          onQueueDelete(result.removedUrl);
         }
+
+        valueRef.current = result.urls;
+        onChange(result.urls);
+
+        if (!onQueueDelete) {
+          await deleteImage(result.removedUrl).catch(() => {
+            // Keep optimistic removal even if blob cleanup fails.
+          });
+        }
+      } finally {
+        operationRef.current = false;
+        setRemoving(false);
       }
-      onChange(value.filter((_, i) => i !== index));
     },
-    [value, onChange, onQueueDelete]
+    [onChange, onQueueDelete]
   );
 
   return (
@@ -209,7 +253,9 @@ export function MultiImageUpload({
       <div className="flex gap-3 flex-wrap">
         {value.map((url, i) => (
           <div
-            key={url}
+            // Index-suffixed: the same URL can legitimately appear twice, and a
+            // bare url key would collide and drop a tile.
+            key={`${url}-${i}`}
             className="relative w-[100px] h-[100px] sm:w-[120px] sm:h-[120px] rounded-md border overflow-hidden group"
           >
             <Image
@@ -223,6 +269,7 @@ export function MultiImageUpload({
             <button
               type="button"
               onClick={() => handleRemove(i)}
+              disabled={uploading || removing}
               className="absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Trash2 className="h-3 w-3" />
@@ -240,6 +287,7 @@ export function MultiImageUpload({
               type="file"
               accept="image/*"
               className="hidden"
+              disabled={uploading || removing}
               onChange={handleAdd}
             />
           </label>
