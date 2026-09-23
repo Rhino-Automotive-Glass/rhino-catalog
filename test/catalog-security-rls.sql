@@ -38,9 +38,9 @@ CREATE POLICY "brands_select_public" ON public.brands FOR SELECT TO anon, authen
 CREATE POLICY "product_brands_select_public" ON public.product_brands FOR SELECT TO anon, authenticated USING (true);
 CREATE POLICY "product_brands_manage_authenticated" ON public.product_brands FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-\i supabase/migrations/202609230001_record_production_catalog_security.sql
+\i supabase/migrations/20260923060002_record_production_catalog_security.sql
 -- Replay against production-equivalent state: no policy or config drift.
-\i supabase/migrations/202609230001_record_production_catalog_security.sql
+\i supabase/migrations/20260923060002_record_production_catalog_security.sql
 
 DO $$
 DECLARE
