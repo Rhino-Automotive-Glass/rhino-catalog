@@ -8,6 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapProductRow, PRODUCT_WITH_SOURCE_SELECT } from "@/lib/product-query";
 import { getProductDisplayName } from "@/lib/product-display";
 import { hasProductYearOverlap } from "@/lib/product-years.mjs";
+export { buildProductGroupSearchFilter } from "@/lib/product-group-search.mjs";
 
 type RawBrand = {
   id: string;
@@ -95,26 +96,6 @@ function hasYearOverlap(
 
 function hasGroupYearFilter(yearStart: number | null, yearEnd: number | null): boolean {
   return yearStart !== null || yearEnd !== null;
-}
-
-export function buildProductGroupSearchFilter(search: string): string | null {
-  const safeSearch = search
-    .normalize("NFKC")
-    .replace(/[(),]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!safeSearch) return null;
-
-  const escapedSearch = safeSearch
-    .replace(/\\/g, "\\\\")
-    .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_");
-  const pattern = `%${escapedSearch}%`;
-
-  return ["name", "slug", "description", "model", "sub_model", "version", "additional", "other"]
-    .map((column) => `${column}.ilike.${pattern}`)
-    .join(",");
 }
 
 export function mapProductGroupRow(row: RawProductGroupRow): ProductGroup {
