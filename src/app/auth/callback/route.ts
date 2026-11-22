@@ -1,141 +1,112 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
 import type { EmailOtpType } from '@supabase/supabase-js'
+import { NextResponse, type NextRequest } from 'next/server'
+import { createClient } from '@/lib/supabase-server'
+import type { AuthCallbackErrorCode } from '@/lib/auth/constants'
 
 /**
- * Only same-origin absolute paths are allowed as a post-login destination.
+ * Landing route for every Supabase auth email link (signup confirmation,
+ * invite, magic link, email change, password recovery) and for PKCE codes.
  *
- * Anything else falls back to "/". Rejecting protocol-relative ("//evil.com")
- * and backslash ("/\evil.com") prefixes matters because browsers normalise them
- * to a different host, and a bare "@evil.com" would be parsed as userinfo when
- * appended to the origin — both are open redirects.
+ * The Rhino apps share one Supabase project and one set of email templates,
+ * which link to:
+ *
+ *   {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=<type>
+ *
+ * {{ .RedirectTo }} is the callback URL the sending app passed, i.e.
+ * ${origin}/auth/callback (auth-ui's default). The token travels as a query
+ * parameter, so this handler can verify it server-side with verifyOtp and set
+ * the session cookies. Unlike a PKCE code, that works when the link is opened
+ * on a different device than the one that requested it.
  */
-function getSafeNextPath(next: string | null): string {
-  if (!next) return '/'
 
-  if (
-    !next.startsWith('/') ||
-    next.startsWith('//') ||
-    next.startsWith('/\\')
-  ) {
-    return '/'
-  }
-
-  return next
-}
-
-const VALID_OTP_TYPES: EmailOtpType[] = [
-  'invite',
+const EMAIL_OTP_TYPES: readonly EmailOtpType[] = [
   'signup',
+  'invite',
   'magiclink',
   'recovery',
   'email_change',
   'email',
 ]
 
-async function createSupabaseClient() {
-  const cookieStore = await cookies()
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+/** Same-origin paths only. Rejects "//host" and "/\host" open redirects. */
+function safeNextPath(value: string | null): string {
+  if (
+    !value ||
+    !value.startsWith('/') ||
+    value.startsWith('//') ||
+    value.startsWith('/\\')
+  ) {
+    return '/'
+  }
+  return value
 }
 
-/**
- * Two different flows arrive here.
- *
- * `?code=` is PKCE — OAuth and password sign-in.
- *
- * `?token_hash=&type=` comes from links in auth emails (recovery, invite,
- * signup confirmation). Those must be verified with verifyOtp, not
- * exchangeCodeForSession, and the email template has to build the link with
- * {{ .TokenHash }} as a query param:
- *
- *   {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery
- *
- * The default {{ .ConfirmationURL }} instead returns the session in the URL
- * fragment (#access_token=...), which is never sent to the server, so a route
- * handler cannot read it. Note {{ .RedirectTo }} rather than {{ .SiteURL }}:
- * several apps share this Supabase project and its single Site URL points at a
- * different one.
- */
+function redirectToLogin(origin: string, code: AuthCallbackErrorCode) {
+  const url = new URL('/login', origin)
+  url.searchParams.set('error', code)
+  return NextResponse.redirect(url)
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
   const tokenHash = searchParams.get('token_hash')
   const type = searchParams.get('type')
-  const next = getSafeNextPath(searchParams.get('next'))
+  const code = searchParams.get('code')
+  const next = safeNextPath(searchParams.get('next'))
 
-  // A rejected or expired link reports itself through these, with no code and
-  // no token_hash.
-  const authError = searchParams.get('error')
-  if (authError) {
-    console.error('Auth callback returned an error', {
-      error: authError,
+  // Expired or rejected links report themselves with these and no token.
+  if (searchParams.has('error')) {
+    console.error('Auth callback received an error', {
+      error: searchParams.get('error'),
       code: searchParams.get('error_code'),
       description: searchParams.get('error_description'),
     })
-    return NextResponse.redirect(`${origin}/auth/error`)
+    return redirectToLogin(origin, 'link_invalid')
   }
 
   if (tokenHash && type) {
-    if (!VALID_OTP_TYPES.includes(type as EmailOtpType)) {
-      console.error('Auth callback received an unsupported OTP type', { type })
-      return NextResponse.redirect(`${origin}/auth/error`)
+    if (!EMAIL_OTP_TYPES.includes(type as EmailOtpType)) {
+      console.error('Auth callback received an unsupported type', { type })
+      return redirectToLogin(origin, 'link_invalid')
     }
 
-    const supabase = await createSupabaseClient()
+    const supabase = await createClient()
     const { error } = await supabase.auth.verifyOtp({
-      type: type as EmailOtpType,
       token_hash: tokenHash,
+      type: type as EmailOtpType,
     })
 
-    if (!error) {
-      // Recovery leaves the user holding a session but still needing to choose
-      // a password, so it always goes to the reset page — `next` would strand
-      // them somewhere they cannot complete the flow.
-      const destination = type === 'recovery' ? '/reset-password' : next
-      return NextResponse.redirect(new URL(destination, origin))
+    if (error) {
+      console.error('Auth token verification failed', {
+        type,
+        code: error.code,
+        status: error.status,
+        message: error.message,
+      })
+      return redirectToLogin(origin, 'link_invalid')
     }
 
-    console.error('Auth token verification failed', {
-      type,
-      code: error.code,
-      status: error.status,
-      message: error.message,
-    })
-    return NextResponse.redirect(`${origin}/auth/error`)
+    // A recovery session still has to choose a password; any other `next`
+    // would strand the user signed in with no way to finish the reset.
+    const destination = type === 'recovery' ? '/reset-password' : next
+    return NextResponse.redirect(new URL(destination, origin))
   }
 
   if (code) {
-    const supabase = await createSupabaseClient()
+    const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-    if (!error) {
-      return NextResponse.redirect(new URL(next, origin))
+    if (error) {
+      console.error('Auth code exchange failed', {
+        code: error.code,
+        status: error.status,
+        message: error.message,
+      })
+      return redirectToLogin(origin, 'link_invalid')
     }
 
-    console.error('Auth code exchange failed', {
-      code: error.code,
-      status: error.status,
-      message: error.message,
-    })
+    return NextResponse.redirect(new URL(next, origin))
   }
 
-  return NextResponse.redirect(`${origin}/auth/error`)
+  return redirectToLogin(origin, 'link_incomplete')
 }
