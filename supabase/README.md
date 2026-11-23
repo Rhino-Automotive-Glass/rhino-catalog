@@ -8,7 +8,7 @@ Feature commits added hand-named, 12-digit SQL files under `supabase/migrations/
 
 The 16 older files have been moved unchanged to `supabase/archive/migrations/`. They are historical reference, **not an executable pending queue**. Some contain destructive or conflicting operations: `202603170002` creates a broad authenticated `product_brands` policy, and `202603250001` truncates product images and replaces production's max-three constraint with max-one. Other old `CREATE OR REPLACE` statements omit pinned `search_path`.
 
-`supabase/migrations/` now contains one CLI-generated, 14-digit, record-only migration for production's existing catalog security state. The SQL is safe to review as a record; it must not be treated as authorization to apply it to production.
+`supabase/migrations/` contains reviewed, CLI-generated, 14-digit migrations that record production state owned by this catalog. The SQL is safe to review; its presence must not be treated as authorization to apply it to production.
 
 ## Data flow is separate from migration ownership
 
@@ -23,3 +23,7 @@ The 16 older files have been moved unchanged to `supabase/archive/migrations/`. 
 5. If ledger reconciliation is needed, prepare a separate, reviewed plan. Do not mark archived files applied or remote entries reverted merely to make `db push` pass; that would change history without proving SQL equivalence.
 
 Archived files remain available for fresh-database reconstruction, but this repository alone cannot bootstrap the shared schema. A future consolidated baseline should be generated from production and coordinated across all six repositories.
+
+## Current ownership records
+
+- [`products.product_code_id` unique index](../docs/products-product-code-id-unique-index.md): production definition, idempotent catalog migration, isolated tests, verification queries, and deployment gate.
