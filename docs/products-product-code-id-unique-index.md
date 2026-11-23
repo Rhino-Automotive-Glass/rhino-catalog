@@ -191,6 +191,8 @@ Production migration `20260923072607_backfill_legacy_catalog_sync` contains `CRE
 
 After this PR, `20260923152957_track_products_product_code_id_unique_index` is also local-only until reviewed production reconciliation. This focused migration does not resolve broader shared-ledger divergence. Do not run `supabase db push` or `supabase migration up --linked` while that divergence remains.
 
+**Resolved 2026-11-23.** `20260923152957` and `20260923060002` were recorded as applied in production, and the 20 remote-only versions were fetched into `supabase/migrations/`. Local and production history now match; see [`supabase/README.md`](../supabase/README.md#current-state).
+
 ## Verification queries
 
 Exact definition and state:
@@ -272,6 +274,8 @@ Run [`products_product_code_id_unique_index.sh`](../supabase/tests/products_prod
 The test uses disposable image `public.ecr.aws/supabase/postgres:17.6.1.156` and removes its container on exit. Override `POSTGRES_TEST_IMAGE` to test another PostgreSQL-compatible image.
 
 ## Deployment sequence
+
+**Completed 2026-11-23.** Step 2 checks matched the evidence above exactly (same definition and state; 1,727 rows, 0 nulls, 0 duplicates; same 20 ledger entries). Migration sha256 `2c9b8b1fd8b611039edc0c41a2d75c02da96a9a427988f218651f312bb57f11f`. Steps 4–5 were skipped with approval: the step 2 queries already prove every condition the migration checks, so executing it would only re-validate. Step 6 ran via `supabase migration repair 20260923152957 --status applied --remote=uzgomevojvzdzfunjhdr`; production history now lists it, and the index is unchanged.
 
 1. Merge this repository PR after review. Do not deploy database changes from merge automation.
 2. Re-run all read-only verification queries against production. Stop if definition, state, duplicates, or history changed.
